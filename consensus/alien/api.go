@@ -824,7 +824,7 @@ func (api *API) calStorageVerifyPercentage(number uint64, blockPerday uint64,s *
 	bigNumber := new(big.Int).SetUint64(number)
 	bigblockPerDay := new(big.Int).SetUint64(blockPerday)
 	zeroTime := new(big.Int).Mul(new(big.Int).Div(bigNumber, bigblockPerDay), bigblockPerDay) //0:00 every day
-	beforeZeroTime := new(big.Int).Sub(zeroTime, bigblockPerDay)
+	beforeZeroTime := new(big.Int).Set(zeroTime)
 	for pledgeAddr, sPledge := range s.StoragePledge {
 		capSucc := big.NewInt(0)
 		storagespaces := s.StoragePledge[pledgeAddr].StorageSpaces
