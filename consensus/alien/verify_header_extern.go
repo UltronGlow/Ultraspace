@@ -216,6 +216,10 @@ func verifyHeaderExtern(currentExtra *HeaderExtra, verifyExtra *HeaderExtra) err
 	if currentExtra.LockAccountsRoot != verifyExtra.LockAccountsRoot {
 		return errors.New("Compare LockAccountsRoot, current is " + currentExtra.LockAccountsRoot.String() + ". but verify is " + verifyExtra.LockAccountsRoot.String())
 	}
+	//SRTDataRoot
+	if currentExtra.SRTDataRoot != verifyExtra.SRTDataRoot {
+		return errors.New("Compare SRTDataRoot, current is " + currentExtra.SRTDataRoot.String() + ". but verify is " + verifyExtra.SRTDataRoot.String())
+	}
 	return nil
 }
 

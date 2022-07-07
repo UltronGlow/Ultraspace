@@ -123,7 +123,7 @@ const (
 	sscEnumSignerReward        = 3
 	sscEnumFlwReward        = 4
 	sscEnumBandwidthReward        = 5
-
+	sscEnumStoragePledgeRedeemLock = 6
 	sscEnumMiner          = 10000
 	sscEnumBndwdthClaimed = 0
 	sscEnumBndwdthPunish  = 1
@@ -137,7 +137,7 @@ const (
 	sscEnumPStoragePledgeID = 6
 	sscEnumLeaseExpires = 7
 	sscEnumMinimumRent  = 8
-	sscEnumStoragePkPer        = 10 //Packaging bolocknumber per GB
+	sscEnumMaximumRent=11
 	/*
 	 *  proposal type
 	 */
@@ -388,12 +388,67 @@ type HeaderExtra struct {
 	LeaseRescind        []LeaseRescindRecord
 	StorageRecoveryData [] SPledgeRecoveryRecord
 	StorageProofRecord  [] StorageProofRecord
+
+	StorageExchangePrice [] StorageExchangePriceRecord
+	ExtraStateRoot common.Hash
+	LockAccountsRoot common.Hash
+	StorageDataRoot common.Hash
+	StorageExchangeBw []StorageExchangeBwRecord
+	SRTDataRoot common.Hash
+}
+type StorageHeaderExtraV2 struct {
+	CurrentBlockConfirmations []Confirmation
+	CurrentBlockVotes         []Vote
+	CurrentBlockProposals     []Proposal
+	CurrentBlockDeclares      []Declare
+	ModifyPredecessorVotes    []Vote
+	LoopStartTime             uint64
+	SignerQueue               []common.Address
+	SignerMissing             []common.Address
+	ConfirmedBlockNumber      uint64
+	SideChainConfirmations    []SCConfirmation
+	SideChainSetCoinbases     []SCSetCoinbase
+	SideChainNoticeConfirmed  []SCConfirmation
+	SideChainCharging         []GasCharging //This only exist in side chain's header.Extra
+
+	ExchangeNFC               []ExchangeNFCRecord
+	DeviceBind                []DeviceBindRecord
+	CandidatePledge           []CandidatePledgeRecord
+	CandidatePunish           []CandidatePunishRecord
+	MinerStake                []MinerStakeRecord
+	CandidateExit             []common.Address
+	ClaimedBandwidth          []ClaimedBandwidthRecord
+	FlowMinerExit             []common.Address
+	BandwidthPunish           []BandwidthPunishRecord
+	ConfigExchRate            uint32
+	ConfigOffLine             uint32
+	ConfigDeposit             []ConfigDepositRecord
+	ConfigISPQOS              []ISPQOSRecord
+	LockParameters            []LockParameterRecord
+	ManagerAddress            []ManagerAddressRecord
+	FlowHarvest               *big.Int
+	LockReward                []LockRewardRecord
+	GrantProfit               []consensus.GrantProfitRecord
+	FlowReport                []MinerFlowReportRecord
+
+	StoragePledge       [] SPledgeRecord
+	StoragePledgeExit   [] SPledgeExitRecord
+	LeaseRequest        []LeaseRequestRecord
+	ExchangeSRT         []ExchangeSRTRecord
+	LeasePledge         []LeasePledgeRecord
+	LeaseRenewal        []LeaseRenewalRecord
+	LeaseRenewalPledge  []LeaseRenewalPledgeRecord
+	LeaseRescind        []LeaseRescindRecord
+	StorageRecoveryData [] SPledgeRecoveryRecord
+	StorageProofRecord  [] StorageProofRecord
+
 	StorageExchangePrice [] StorageExchangePriceRecord
 	ExtraStateRoot common.Hash
 	LockAccountsRoot common.Hash
 	StorageDataRoot common.Hash
 	StorageExchangeBw []StorageExchangeBwRecord
 }
+
 type StorageHeaderExtraV1 struct {
 	CurrentBlockConfirmations []Confirmation
 	CurrentBlockVotes         []Vote
@@ -567,6 +622,56 @@ func encodeHeaderExtra(config *params.AlienConfig, number *big.Int, val HeaderEx
 		}else if number.Uint64() <StorageChBwEffectNumber{
 			headerExtrav1:=StorageHeaderExtraV1{
 				CurrentBlockConfirmations :val.CurrentBlockConfirmations,
+			CurrentBlockVotes:val.CurrentBlockVotes,
+			CurrentBlockProposals:val.CurrentBlockProposals,
+			CurrentBlockDeclares:val.CurrentBlockDeclares,
+			ModifyPredecessorVotes:val.ModifyPredecessorVotes,
+			LoopStartTime:val.LoopStartTime,
+			SignerQueue:val.SignerQueue,
+			SignerMissing:val.SignerMissing,
+			ConfirmedBlockNumber:val.ConfirmedBlockNumber,
+			SideChainConfirmations:val.SideChainConfirmations,
+			SideChainSetCoinbases:val.SideChainSetCoinbases,
+			SideChainNoticeConfirmed:val.SideChainNoticeConfirmed,
+			SideChainCharging:val.SideChainCharging,
+			ExchangeNFC:val.ExchangeNFC,
+			DeviceBind :val.DeviceBind,
+			CandidatePledge:val.CandidatePledge,
+			CandidatePunish:val.CandidatePunish,
+			MinerStake:val.MinerStake,
+			CandidateExit:val.CandidateExit,
+			ClaimedBandwidth:val.ClaimedBandwidth,
+			FlowMinerExit:val.FlowMinerExit,
+			BandwidthPunish:val.BandwidthPunish,
+			ConfigExchRate:val.ConfigExchRate,
+			ConfigOffLine:val.ConfigOffLine,
+			ConfigDeposit :val.ConfigDeposit,
+			ConfigISPQOS:val.ConfigISPQOS,
+			LockParameters:val.LockParameters,
+			ManagerAddress :val.ManagerAddress,
+			FlowHarvest:val.FlowHarvest,
+			LockReward :val.LockReward,
+			GrantProfit :val.GrantProfit,
+			FlowReport:val.FlowReport,
+			StoragePledge:val.StoragePledge,
+			StoragePledgeExit:val.StoragePledgeExit,
+			LeaseRequest:val.LeaseRequest,
+			ExchangeSRT:val.ExchangeSRT,
+			LeasePledge:val.LeasePledge,
+			LeaseRenewal:val.LeaseRenewal,
+			LeaseRenewalPledge:val.LeaseRenewalPledge,
+			LeaseRescind:val.LeaseRescind,
+			StorageRecoveryData:val.StorageRecoveryData,
+			StorageProofRecord :val.StorageProofRecord,
+			StorageExchangePrice:val.StorageExchangePrice,
+			ExtraStateRoot:val.ExtraStateRoot,
+			LockAccountsRoot:val.LockAccountsRoot,
+			StorageDataRoot:val.StorageDataRoot,
+			}
+			return rlp.EncodeToBytes(headerExtrav1)
+		}else if number.Uint64() <PledgeRevertLockEffectNumber{
+			headerExtrav2:=StorageHeaderExtraV2{
+				CurrentBlockConfirmations :val.CurrentBlockConfirmations,
 				CurrentBlockVotes:val.CurrentBlockVotes,
 				CurrentBlockProposals:val.CurrentBlockProposals,
 				CurrentBlockDeclares:val.CurrentBlockDeclares,
@@ -612,9 +717,10 @@ func encodeHeaderExtra(config *params.AlienConfig, number *big.Int, val HeaderEx
 				ExtraStateRoot:val.ExtraStateRoot,
 				LockAccountsRoot:val.LockAccountsRoot,
 				StorageDataRoot:val.StorageDataRoot,
+				StorageExchangeBw:val.StorageExchangeBw,
 			}
-			return rlp.EncodeToBytes(headerExtrav1)
-		}else{
+			return rlp.EncodeToBytes(headerExtrav2)
+		} else{
 			headerExtra = val
 		}
 	}
@@ -766,7 +872,9 @@ func (a *Alien) processCustomTx(headerExtra HeaderExtra, chain consensus.ChainHe
 						} else if txDataInfo[posCategory] == nfcCategoryCandPnsh {
 							headerExtra.CandidatePunish = a.processCandidatePunish (headerExtra.CandidatePunish, txDataInfo, txSender, tx, receipts, state, snapCache)
 						} else if txDataInfo[posCategory] == nfcCategoryFlwReq {
-							headerExtra.ClaimedBandwidth = a.processMinerPledge (headerExtra.ClaimedBandwidth, txDataInfo, txSender, tx, receipts, state, snapCache)
+							if number<PledgeRevertLockEffectNumber{
+								headerExtra.ClaimedBandwidth = a.processMinerPledge (headerExtra.ClaimedBandwidth, txDataInfo, txSender, tx, receipts, state, snapCache)
+							}
 						} else if txDataInfo[posCategory] == nfcCategoryFlwExit {
 							headerExtra.FlowMinerExit = a.processMinerExit (headerExtra.FlowMinerExit, txDataInfo, txSender, tx, receipts, state, snapCache)
 						}
@@ -1306,16 +1414,18 @@ func (a *Alien) processDeviceBind(currentDeviceBind []DeviceBindRecord, txDataIn
 		log.Warn("Device bind revenue", "type", txDataInfo[nfcPosRevenueType])
 		return currentDeviceBind
 	}
-	if 0 < len(txDataInfo[nfcPosRevenueContract]) {
-		if err := deviceBind.Contract.UnmarshalText1([]byte(txDataInfo[nfcPosRevenueContract])); err != nil {
-			log.Warn("Device bind revenue", "contract address", txDataInfo[nfcPosRevenueContract])
-			return currentDeviceBind
+	if number<PledgeRevertLockEffectNumber{
+		if 0 < len(txDataInfo[nfcPosRevenueContract]) {
+			if err := deviceBind.Contract.UnmarshalText1([]byte(txDataInfo[nfcPosRevenueContract])); err != nil {
+				log.Warn("Device bind revenue", "contract address", txDataInfo[nfcPosRevenueContract])
+				return currentDeviceBind
+			}
 		}
-	}
-	if 0 < len(txDataInfo[nfcPosMiltiSign]) {
-		if err := deviceBind.MultiSign.UnmarshalText1([]byte(txDataInfo[nfcPosMiltiSign])); err != nil {
-			log.Warn("Device bind revenue", "milti-signature address", txDataInfo[nfcPosRevenueContract])
-			return currentDeviceBind
+		if 0 < len(txDataInfo[nfcPosMiltiSign]) {
+			if err := deviceBind.MultiSign.UnmarshalText1([]byte(txDataInfo[nfcPosMiltiSign])); err != nil {
+				log.Warn("Device bind revenue", "milti-signature address", txDataInfo[nfcPosRevenueContract])
+				return currentDeviceBind
+			}
 		}
 	}
 	if number >=StorageEffectBlockNumber {
@@ -1332,7 +1442,10 @@ func (a *Alien) processDeviceBind(currentDeviceBind []DeviceBindRecord, txDataIn
 		log.Warn("Device bind revenue", "checkRevenueNormalBind", err.Error())
 		return currentDeviceBind
 	}
-
+	if err := a.checkBindMaxStorageSpace(currentDeviceBind,deviceBind,snap,number); err != nil {
+		log.Warn("Device bind revenue", "checkRevenueStorageBind", err.Error())
+		return currentDeviceBind
+	}
 	topics := make([]common.Hash, 3)
 	topics[0].UnmarshalText([]byte("0xf061654231b0035280bd8dd06084a38aa871445d0b7311be8cc2605c5672a6e3")) //web3.sha3("DeviceBind(uint32,byte32,byte32,address)")
 	//topics[0].SetBytes([]byte("0x33400159405eff48ec6605a3edb3038722f1cb3a49f577526660be92904f02a2"))
@@ -1555,24 +1668,29 @@ func (a *Alien) processDeviceRebind(currentDeviceBind []DeviceBindRecord, txData
 		log.Warn("Device rebind revenue", "type", txDataInfo[nfcPosRevenueType])
 		return currentDeviceBind
 	}
-	if 0 < len(txDataInfo[nfcPosRevenueContract]) {
-		if err := deviceBind.Contract.UnmarshalText1([]byte(txDataInfo[nfcPosRevenueContract])); err != nil {
-			log.Warn("Device rebind revenue", "contract address", txDataInfo[nfcPosRevenueContract])
-			return currentDeviceBind
+	if number<PledgeRevertLockEffectNumber{
+		if 0 < len(txDataInfo[nfcPosRevenueContract]) {
+			if err := deviceBind.Contract.UnmarshalText1([]byte(txDataInfo[nfcPosRevenueContract])); err != nil {
+				log.Warn("Device rebind revenue", "contract address", txDataInfo[nfcPosRevenueContract])
+				return currentDeviceBind
+			}
+		}
+		if 0 < len(txDataInfo[nfcPosMiltiSign]) {
+			if err := deviceBind.MultiSign.UnmarshalText1([]byte(txDataInfo[nfcPosMiltiSign])); err != nil {
+				log.Warn("Device rebind revenue", "milti-signature address", txDataInfo[nfcPosRevenueContract])
+				return currentDeviceBind
+			}
 		}
 	}
-	if 0 < len(txDataInfo[nfcPosMiltiSign]) {
-		if err := deviceBind.MultiSign.UnmarshalText1([]byte(txDataInfo[nfcPosMiltiSign])); err != nil {
-			log.Warn("Device rebind revenue", "milti-signature address", txDataInfo[nfcPosRevenueContract])
-			return currentDeviceBind
-		}
-	}
-
+	
 	if err := a.checkRevenueNormalBind(deviceBind,snap); err != nil {
 		log.Warn("Device rebind revenue", "checkRevenueNormalBind", err.Error())
 		return currentDeviceBind
 	}
-
+	if err := a.checkBindMaxStorageSpace(currentDeviceBind,deviceBind,snap,number); err != nil {
+		log.Warn("Device rebind revenue", "checkRevenueStorageBind", err.Error())
+		return currentDeviceBind
+	}
 	topics := make([]common.Hash, 3)
 	topics[0].UnmarshalText([]byte("0xf061654231b0035280bd8dd06084a38aa871445d0b7311be8cc2605c5672a6e3")) //web3.sha3("DeviceBind(uint32,byte32,byte32,address)")
 	//topics[0].SetBytes([]byte("0x33400159405eff48ec6605a3edb3038722f1cb3a49f577526660be92904f02a2"))
@@ -2264,4 +2382,25 @@ func (a *Alien) addRevenueAddrBal(stake *big.Int,voter common.Address,number uin
 		}
 	}
 	return stake
+}
+func (a *Alien) checkBindMaxStorageSpace(currentDeviceBind []DeviceBindRecord,deviceBind DeviceBindRecord, snap *Snapshot,number uint64) error {
+	if number>PledgeRevertLockEffectNumber{
+		if deviceBind.Type == 1 {
+			alreadybind := make(map[common.Address]uint64)
+			alreadybind[deviceBind.Device]=1
+			for device, revenue := range snap.RevenueStorage {
+				revenueAddress:=revenue.RevenueAddress
+				if deviceBind.Revenue==revenueAddress {
+					alreadybind[device] = 1
+				}
+			}
+			for _, item := range currentDeviceBind {
+				if item.Revenue==deviceBind.Revenue{
+					alreadybind[item.Device] = 1
+				}
+			}
+			return a.checkMaxStorageSpaceByAddr(alreadybind,snap,common.Big0)
+		}
+	}
+	return nil
 }

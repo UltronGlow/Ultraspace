@@ -1122,16 +1122,6 @@ func (a *Alien) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 		if nil != grantProfit{
 			currentHeaderExtra.GrantProfit = append(currentHeaderExtra.GrantProfit, grantProfit...)
 		}
-		// play flow
-		if a.isAccumulateFlowRewards(header.Number.Uint64()) {
-			flowHarvest := big.NewInt(0)
-			currentHeaderExtra.LockReward, flowHarvest = accumulateFlowRewards(currentHeaderExtra.LockReward, snap, a.db)
-			currentHeaderExtra.FlowHarvest = new(big.Int).Set(flowHarvest)
-		} else if a.isAccumulateBandWidthRewards(header.Number.Uint64()) {
-			flowHarvest := big.NewInt(0)
-			currentHeaderExtra.LockReward, flowHarvest = accumulateBandwidthRewards(currentHeaderExtra.LockReward, chain.Config(), header, snap, a.db)
-			currentHeaderExtra.FlowHarvest = new(big.Int).Set(flowHarvest)
-		}
 		flowHarvest := big.NewInt(0)
 		// Accumulate any block rewards and commit the final state root
 		currentHeaderExtra.LockReward, flowHarvest = accumulateRewards(currentHeaderExtra.LockReward, chain.Config(), state, header, snap, refundGas, gasReward)
@@ -1190,6 +1180,9 @@ func (a *Alien) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 				state.AddBalance(common.BigToAddress(big.NewInt(0)),leftAmount)
 			}
 			log.Info("extrastate commit", "number", number, "esstateRoot", stateRoot, "lockaccountsRoot", lockAccountRoot)
+			if header.Number.Uint64() >=PledgeRevertLockEffectNumber {
+				currentHeaderExtra.SRTDataRoot = snap1.SRT.Root()
+			}
 		}
 		a.RepairBal(state,number)
 		if number%(snap.config.MaxSignerCount*snap.LCRS) == (snap.config.MaxSignerCount*snap.LCRS - 1) {
@@ -1511,6 +1504,21 @@ func paymentPledge(hasContract bool, pledge *PledgeItem, state *state.StateDB, h
 
 	}
 	return 1, amount
+}
+
+func calPaymentPledge( pledge *PledgeItem,header *types.Header) (*big.Int) {
+	if 0 == pledge.StartHigh {
+		return nil
+	}
+	lockExpire := new(big.Int).Add(big.NewInt(int64(pledge.StartHigh)), big.NewInt(int64(pledge.LockPeriod)))
+	if 0 > header.Number.Cmp(lockExpire) {
+		return nil
+	}
+	amount := caclPayPeriodAmount(pledge, header.Number)
+	if amount.Cmp(big.NewInt(0)) <= 0 {
+		return nil
+	}
+	return  amount
 }
 
 func nYearBandwidthReward(n float64) decimal.Decimal {

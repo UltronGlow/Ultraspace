@@ -18,6 +18,7 @@
 package consensus
 
 import (
+	"bytes"
 	"math/big"
 
 	"github.com/UltronGlow/UltronGlow-Origin/common"
@@ -35,6 +36,33 @@ type GrantProfitRecord struct {
 	RevenueAddress  common.Address
 	RevenueContract common.Address
 	MultiSignature  common.Address
+}
+
+type GrantProfitSlice []GrantProfitRecord
+
+func (s GrantProfitSlice) Len() int      { return len(s) }
+func (s GrantProfitSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+func (s GrantProfitSlice) Less(i, j int) bool {
+	//we need sort reverse, so ...
+	isLess := s[i].Amount.Cmp(s[j].Amount)
+	if isLess > 0 {
+		return true
+	} else if isLess < 0 {
+		return false
+	} else if isLess==0{
+		if s[i].BlockNumber>s[j].BlockNumber{
+			return true
+		}else if s[i].BlockNumber<s[j].BlockNumber{
+			return false
+		}else if s[i].BlockNumber==s[j].BlockNumber{
+			if s[i].Which>s[j].Which{
+				return true
+			}else if s[i].Which<s[j].Which{
+				return false
+			}
+		}
+	}
+	return bytes.Compare(s[i].MinerAddress.Bytes(), s[j].MinerAddress.Bytes()) > 0
 }
 
 type MultiSignatureData struct {

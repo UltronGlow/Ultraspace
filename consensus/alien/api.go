@@ -27,6 +27,7 @@ import (
 	"github.com/UltronGlow/UltronGlow-Origin/log"
 	"github.com/UltronGlow/UltronGlow-Origin/rlp"
 	"github.com/UltronGlow/UltronGlow-Origin/rpc"
+	"github.com/shopspring/decimal"
 	"math/big"
 )
 
@@ -247,20 +248,33 @@ func (api *API) GetSnapshotReleaseAtNumber(number uint64,part string) (*Snapshot
 		if part =="candidatepledge"{
 			snapshotRelease.CandidatePledge=snapshot.CandidatePledge
 		}else if part =="flowminerpledge"{
-			snapshotRelease.FlowPledge=snapshot.FlowPledge
+			if number < PledgeRevertLockEffectNumber{
+				snapshotRelease.FlowPledge=snapshot.FlowPledge
+			}
 		}else if part =="rewardlock"{
 			snapshotRelease.appendFRlockData(snapshot.FlowRevenue.RewardLock,api.alien.db)
 		}else if part =="flowlock"{
 			snapshotRelease.appendFRlockData(snapshot.FlowRevenue.FlowLock,api.alien.db)
 		}else if part =="bandwidthlock"{
 			snapshotRelease.appendFRlockData(snapshot.FlowRevenue.BandwidthLock,api.alien.db)
+		}else if part =="posplexit"{
+			if snapshot.FlowRevenue.PosPgExitLock!=nil {
+				snapshotRelease.appendFRlockData(snapshot.FlowRevenue.PosPgExitLock,api.alien.db)
+			}
+
 		}
 	}else{
 		snapshotRelease.CandidatePledge=snapshot.CandidatePledge
-		snapshotRelease.FlowPledge=snapshot.FlowPledge
+		if number < PledgeRevertLockEffectNumber{
+			snapshotRelease.FlowPledge=snapshot.FlowPledge
+		}
 		snapshotRelease.appendFRlockData(snapshot.FlowRevenue.RewardLock,api.alien.db)
 		snapshotRelease.appendFRlockData(snapshot.FlowRevenue.FlowLock,api.alien.db)
 		snapshotRelease.appendFRlockData(snapshot.FlowRevenue.BandwidthLock,api.alien.db)
+		if number >= PledgeRevertLockEffectNumber{
+			snapshotRelease.appendFRlockData(snapshot.FlowRevenue.PosPgExitLock,api.alien.db)
+		}
+
 	}
 	return snapshotRelease, err
 }
@@ -300,7 +314,12 @@ func (sr *SnapshotRelease) appendFR(FlowRevenue map[common.Address]*LockBalanceD
 			if _, ok := sr.FlowRevenue[t1].LockBalance[t3]; !ok {
 				sr.FlowRevenue[t1].LockBalance[t3] = make(map[uint32]*PledgeItem)
 			}
-			sr.FlowRevenue[t1].LockBalance[t3]=item3
+			t3LockBalance:=sr.FlowRevenue[t1].LockBalance[t3]
+			for t4,item4:=range item3{
+				if _, ok := t3LockBalance[t4]; !ok {
+					t3LockBalance[t4] = item4
+				}
+			}
 		}
 	}
 	return nil
@@ -464,9 +483,30 @@ func (api *API) GetLockRewardAtNumber(number uint64) ([]LockRewardRecord, error)
 	return LockReward, err
 }
 
-func (api *API) GetSRTBalAtNumber(number uint64) (map[common.Address]*big.Int, error) {
- srtI:=SRTIndex{}
- return srtI.getSRTBalAtNumber(number,api.alien.db)
+func (api *API) GetSRTBalAtNumber(number uint64) (*SnapshotSRT, error) {
+	header := api.chain.GetHeaderByNumber(number)
+	if header == nil {
+		return nil, errUnknownBlock
+	}
+	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err != nil {
+		log.Warn("Fail to GetSRTBalAtNumber", "err", err)
+		return nil, errUnknownBlock
+	}
+
+	snapshotSRT:=&SnapshotSRT{
+		SrtBal:make(map[common.Address]*big.Int),
+	}
+	if snapshot.SRT!=nil{
+		srtBal:= snapshot.SRT.GetAll()
+		if err==nil{
+			snapshotSRT.SrtBal=srtBal
+		}
+	}
+	return snapshotSRT, err
+}
+type SnapshotSRT struct {
+	SrtBal map[common.Address]*big.Int `json:"srtbal"`
 }
 
 func (api *API) GetSPledgeAtNumber(number uint64) (*SnapshotSPledge, error) {
@@ -486,6 +526,7 @@ func (api *API) GetSPledgeAtNumber(number uint64) (*SnapshotSPledge, error) {
 	for pledgeAddr,sPledge := range snapshot.StorageData.StoragePledge {
 		snapshotSPledge.StoragePledge[pledgeAddr]=&SPledge2{
 			PledgeStatus:sPledge.PledgeStatus,
+			StorageCapacity:sPledge.StorageSpaces.StorageCapacity,
 			Lease:make(map[common.Hash]*Lease2),
 			LastVerificationTime:sPledge.LastVerificationTime,
 			LastVerificationSuccessTime:sPledge.LastVerificationSuccessTime,
@@ -493,13 +534,21 @@ func (api *API) GetSPledgeAtNumber(number uint64) (*SnapshotSPledge, error) {
 		}
 		lease:=sPledge.Lease
 		for hash,l:=range lease {
-			snapshotSPledge.StoragePledge[pledgeAddr].Lease[hash]=&Lease2{
+			lease2:=&Lease2{
 				Address:l.Address,
 				Status:l.Status,
 				LastVerificationTime:l.LastVerificationTime,
 				LastVerificationSuccessTime:l.LastVerificationSuccessTime,
 				ValidationFailureTotalTime:l.ValidationFailureTotalTime,
+				LeaseList:make(map[common.Hash]*LeaseDetail2),
 			}
+			ll:=l.LeaseList
+			for lhash,item:=range ll{
+				lease2.LeaseList[lhash]=&LeaseDetail2{
+					Deposit: item.Deposit,
+				}
+			}
+			snapshotSPledge.StoragePledge[pledgeAddr].Lease[hash]=lease2
 		}
 	}
 	return snapshotSPledge, err
@@ -511,6 +560,7 @@ type SnapshotSPledge struct {
 
 type SPledge2 struct {
 	PledgeStatus  *big.Int `json:"pledgeStatus"`
+	StorageCapacity *big.Int `json:"storagecapacity"`
 	Lease map[common.Hash]*Lease2 `json:"lease"`
 	LastVerificationTime  *big.Int `json:"lastverificationtime"`
 	LastVerificationSuccessTime  *big.Int `json:"lastverificationsuccesstime"`
@@ -522,6 +572,10 @@ type Lease2 struct {
 	LastVerificationTime  *big.Int `json:"lastverificationtime"`
 	LastVerificationSuccessTime  *big.Int `json:"lastverificationsuccesstime"`
 	ValidationFailureTotalTime *big.Int `json:"validationfailuretotaltime"`
+	LeaseList map[common.Hash]*LeaseDetail2 `json:"leaselist"`
+}
+type LeaseDetail2 struct {
+	Deposit                    *big.Int    `json:"deposit"`
 }
 
 func (api *API) GetStorageRewardAtNumber(number uint64,part string) (*SnapshotStorageReward, error) {
@@ -621,13 +675,20 @@ type SnapshotStorageRatios struct {
 	Ratios map[common.Address]*StorageRatio `json:"ratios"`
 }
 
-func (api *API) GetRevertSRTAtNumber(number uint64) ([]ExchangeSRTRecord, error) {
+type SnapshotRevertSRT struct {
+	RevertSRT []ExchangeSRTRecord `json:"revertsrt"`
+}
+
+func (api *API) GetRevertSRTAtNumber(number uint64) (*SnapshotRevertSRT, error) {
 	revertSRT,err:=NewStorageSnap().lockRevertSRT(api.alien.db,number)
 	if err != nil {
 		log.Info("Fail to decode header Extra", "err", err)
 		return nil,err
 	}
-	return revertSRT,nil
+	snapshotRevertSRT:=&SnapshotRevertSRT{
+		RevertSRT:revertSRT,
+	}
+	return snapshotRevertSRT,nil
 }
 
 func (api *API) GetPaysAtNumber(number uint64) (*SnapshotPay) {
@@ -655,7 +716,264 @@ type PayRecard2 struct {
 	Amount  *big.Int `json:"amount"`
 }
 
-func (api *API) GetSRTBalanceAtNumber(address common.Address,number uint64) (*big.Int,error) {
+type SnapshotAddrSRT struct {
+	AddrSrtBal *big.Int `json:"addrsrtbal"`
+}
+
+func (api *API) GetSRTBalanceAtNumber(address common.Address,number uint64) (*SnapshotAddrSRT,error) {
+	header := api.chain.GetHeaderByNumber(number)
+	if header == nil {
+		return nil, errUnknownBlock
+	}
+	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err != nil {
+		log.Warn("Fail to GetSRTBalanceAtNumber", "err", err)
+		return nil, errUnknownBlock
+	}
+
+	snapshotAddrSRT:=&SnapshotAddrSRT{
+		AddrSrtBal:common.Big0,
+	}
+	if snapshot.SRT!=nil{
+		snapshotAddrSRT.AddrSrtBal= snapshot.SRT.Get(address)
+	}
+
+	return snapshotAddrSRT,nil
+}
+
+func (api *API) GetSRTBalance(address common.Address) (*SnapshotAddrSRT,error) {
+	header := api.chain.CurrentHeader()
+	if header == nil {
+		return nil, errUnknownBlock
+	}
+	return api.GetSRTBalanceAtNumber(address,header.Number.Uint64())
+}
+
+func (api *API) GetSPledgeInfoByAddr(address common.Address) (*SnapshotSPledgeInfo,error) {
+	header := api.chain.CurrentHeader()
+	if header == nil {
+		return nil, errUnknownBlock
+	}
+	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err != nil {
+		log.Warn("Fail to GetSPledgeInfoByAddr", "err", err)
+		return nil, errUnknownBlock
+	}
+	snapshotSPledgeInfo := &SnapshotSPledgeInfo{
+		SPledgeInfo: make(map[common.Address]*SPledge3),
+	}
+	for pledgeAddr,sPledge := range snapshot.StorageData.StoragePledge {
+		if pledgeAddr==address{
+			leftCapacity:=snapshot.StorageData.StoragePledge[pledgeAddr].StorageSpaces.StorageCapacity
+			snapshotSPledgeInfo.SPledgeInfo[pledgeAddr]=&SPledge3{
+				PledgeStatus:sPledge.PledgeStatus,
+				TotalCapacity:new(big.Int).Set(sPledge.TotalCapacity),
+				LeftCapacity:new(big.Int).Set(leftCapacity),
+				Lease:make([]Lease3,0),
+			}
+			lease:=sPledge.Lease
+			for hash,l:=range lease {
+				snapshotSPledgeInfo.SPledgeInfo[pledgeAddr].Lease=append(snapshotSPledgeInfo.SPledgeInfo[pledgeAddr].Lease,Lease3{
+					Status:l.Status,
+					Hash: hash,
+				})
+			}
+		}
+	}
+	return snapshotSPledgeInfo, err
+}
+
+type SnapshotSPledgeInfo struct {
+	SPledgeInfo map[common.Address]*SPledge3 `json:"spledgeinfo"`
+}
+
+type SPledge3 struct {
+	PledgeStatus  *big.Int `json:"pledgeStatus"`
+	TotalCapacity *big.Int               `json:"totalcapacity"`
+	LeftCapacity  *big.Int               `json:"leftcapacity"`
+	Lease []Lease3 `json:"lease"`
+}
+
+type Lease3 struct {
+	Hash common.Hash `json:"hash"`
+	Status int `json:"status"`
+}
+
+func (api *API) GetSPledgeCapVerAtNumber(number uint64) (*SnapshotSPledgeCapVer, error) {
+	header := api.chain.GetHeaderByNumber(number)
+	if header == nil {
+		return nil, errUnknownBlock
+	}
+	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err != nil {
+		log.Warn("Fail to GetSPledgeCapVerAtNumber", "err", err)
+		return nil, errUnknownBlock
+	}
+	snapshotSPledgeCapVer := &SnapshotSPledgeCapVer{
+		SpledgeCapVer: api.calStorageVerifyPercentage(number,snapshot.getBlockPreDay(),snapshot.StorageData.copy()),
+	}
+    return snapshotSPledgeCapVer, err
+}
+
+type SnapshotSPledgeCapVer struct {
+	SpledgeCapVer map[common.Address]*big.Int `json:"spledgecapver"`
+}
+
+func (api *API) calStorageVerifyPercentage(number uint64, blockPerday uint64,s *StorageData) (map[common.Address]*big.Int) {
+	capSuccPer := make(map[common.Address]*big.Int, 0)
+	bigNumber := new(big.Int).SetUint64(number)
+	bigblockPerDay := new(big.Int).SetUint64(blockPerday)
+	zeroTime := new(big.Int).Mul(new(big.Int).Div(bigNumber, bigblockPerDay), bigblockPerDay) //0:00 every day
+	beforeZeroTime := new(big.Int).Sub(zeroTime, bigblockPerDay)
+	for pledgeAddr, sPledge := range s.StoragePledge {
+		capSucc := big.NewInt(0)
+		storagespaces := s.StoragePledge[pledgeAddr].StorageSpaces
+		sfiles := storagespaces.StorageFile
+		for _, sfile := range sfiles {
+			lastVerSuccTime := sfile.LastVerificationSuccessTime
+			if lastVerSuccTime.Cmp(beforeZeroTime) < 0 {
+
+			} else {
+				capSucc = new(big.Int).Add(capSucc, sfile.Capacity)
+			}
+		}
+		leases := make(map[common.Hash]*Lease)
+		for lhash, l := range sPledge.Lease {
+			if l.Status == LeaseNormal || l.Status == LeaseBreach {
+				leases[lhash] = l
+			}
+		}
+		for _, lease := range leases {
+			storageFile := lease.StorageFile
+			for _, file := range storageFile {
+				lastVerSuccTime := file.LastVerificationSuccessTime
+				if lastVerSuccTime.Cmp(beforeZeroTime) < 0 {
+
+				} else {
+					capSucc = new(big.Int).Add(capSucc, file.Capacity)
+				}
+			}
+		}
+		per := new(big.Int).Mul(capSucc, big.NewInt(100))
+		per = new(big.Int).Div(per,  sPledge.TotalCapacity)
+		capSuccPer[pledgeAddr]=per
+	}
+	return capSuccPer
+}
+
+type SnapshotSPledgeValue struct {
+	SpledgeValue *big.Int `json:"spledgevalue"`
+}
+
+func (api *API) GetStorageValueAtNumber(number uint64,part string) (*SnapshotSPledgeValue, error) {
+	snapshotStorage := &SnapshotSPledgeValue{
+		SpledgeValue:common.Big0,
+	}
+	key:=originalTotalCapacityKey
+	var err error
+	var v *big.Int
+	if part =="totalPledgeReward"{
+		key=totalPledgeRewardKey
+	}
+	if part =="storageHarvest"{
+		key=storageHarvestKey
+	}
+	if part =="leaseHarvest"{
+		key=leaseHarvestKey
+	}
+	v,err=NewStorageSnap().loadSpledgeValue(api.alien.db,number,key)
+	if err==nil&&v!=nil{
+		snapshotStorage.SpledgeValue=v
+	}
+	return snapshotStorage, err
+}
+
+type SnapshotSPledgeDecimalValue struct {
+	SpledgeDecimalValue decimal.Decimal `json:"spledgedecimalvalue"`
+}
+
+
+func (api *API) GetStorageDecimalValueAtNumber(number uint64,part string) (*SnapshotSPledgeDecimalValue, error) {
+	snapshotStorage := &SnapshotSPledgeDecimalValue{
+		SpledgeDecimalValue:decimal.Zero,
+	}
+	key:=totalLeaseSpaceKey
+	var err error
+	var v decimal.Decimal
+	v,err=NewStorageSnap().loadSpledgeDecimalValue(api.alien.db,number,key)
+	if err==nil{
+		snapshotStorage.SpledgeDecimalValue=v
+	}
+	return snapshotStorage, err
+}
+
+
+type SnapshotSPledgeRatioValue struct {
+	SpledgeRatioValue decimal.Decimal `json:"spledgeratiovalue"`
+}
+
+func (api *API) GetStorageRatioValueAtNumber(number uint64,value *big.Int,part string) (*SnapshotSPledgeRatioValue, error) {
+	snapshotStorage := &SnapshotSPledgeRatioValue{
+		SpledgeRatioValue:decimal.Zero,
+	}
+	var v decimal.Decimal
+	if part =="Bandwidth"{
+		v=getBandwaith(value,number)
+	}
+	if part =="StorageRatio"{
+		v=NewStorageSnap().calStorageRatio(value)
+	}
+	snapshotStorage.SpledgeRatioValue=v
+	return snapshotStorage, nil
+}
+
+type SnapshotSucSPledge struct {
+	SucSPledge []common.Address `json:"sucspledge"`
+}
+
+func (api *API) GetSucSPledgeAtNumber(number uint64) (*SnapshotSucSPledge, error) {
+	snapshotSucSPledge := &SnapshotSucSPledge{
+		SucSPledge:make([]common.Address,0),
+	}
+	sucspledge,err:=NewStorageSnap().loadSPledgeSucc(api.alien.db,number)
+	if err==nil&&sucspledge!=nil&&len(sucspledge)>0{
+		snapshotSucSPledge.SucSPledge=sucspledge
+	}
+	return snapshotSucSPledge, err
+}
+
+type SnapshotRentSuc struct {
+	RentSuc []common.Hash `json:"rentsuc"`
+}
+
+func (api *API) GetRentSucAtNumber(number uint64) (*SnapshotRentSuc, error) {
+	snapshotRentSuc := &SnapshotRentSuc{
+		RentSuc:make([]common.Hash,0),
+	}
+	rentSuc,err:=NewStorageSnap().loadRentSucc(api.alien.db,number)
+	if err==nil&&rentSuc!=nil&&len(rentSuc)>0{
+		snapshotRentSuc.RentSuc=rentSuc
+	}
+	return snapshotRentSuc, err
+}
+
+
+type SnapshotCapSuccAddrs struct {
+	CapSuccAddrs map[common.Address]*big.Int `json:"capsuccaddrs"`
+}
+
+func (api *API) GetCapSuccAddrsAtNumber(number uint64) (*SnapshotCapSuccAddrs, error) {
+	snapshotCapSuccAddrs := &SnapshotCapSuccAddrs{
+		CapSuccAddrs:make(map[common.Address]*big.Int),
+	}
+	capSuccAddrs,err:=NewStorageSnap().loadCapSuccAddrs(api.alien.db,number)
+	if err==nil&&capSuccAddrs!=nil&&len(capSuccAddrs)>0{
+		snapshotCapSuccAddrs.CapSuccAddrs=capSuccAddrs
+	}
+	return snapshotCapSuccAddrs, err
+}
+
+func (api *API) GetGrantProfitAtNumber(number uint64) ([]consensus.GrantProfitRecord, error) {
 	header := api.chain.GetHeaderByNumber(number)
 	if header == nil {
 		return nil, errUnknownBlock
@@ -666,18 +984,9 @@ func (api *API) GetSRTBalanceAtNumber(address common.Address,number uint64) (*bi
 		log.Info("Fail to decode header Extra", "err", err)
 		return nil,err
 	}
-	es, err := extrastate.ExtraStateAt(headerExtra.ExtraStateRoot)
-	if err != nil {
-		log.Error("extrastate open failed", "root", "err", err)
-		return nil, err
+	grantProfit:=make([]consensus.GrantProfitRecord,0)
+	if len(headerExtra.GrantProfit)>0 {
+		grantProfit=append(grantProfit,headerExtra.GrantProfit...)
 	}
-	return es.GetBalance(address),nil
-}
-
-func (api *API) GetSRTBalance(address common.Address) (*big.Int,error) {
-	header := api.chain.CurrentHeader()
-	if header == nil {
-		return nil, errUnknownBlock
-	}
-	return api.GetSRTBalanceAtNumber(address,header.Number.Uint64())
+	return grantProfit, err
 }

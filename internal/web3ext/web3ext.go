@@ -153,6 +153,61 @@ web3._extend({
 			call: 'alien_getPaysAtNumber',
 			params: 1
 		}),
+        new web3._extend.Method({
+			name: 'getSPledgeInfoByAddr',
+			call: 'alien_getSPledgeInfoByAddr',
+			params: 1
+		}),
+        new web3._extend.Method({
+			name: 'getSPledgeCapVerAtNumber',
+			call: 'alien_getSPledgeCapVerAtNumber',
+			params: 1
+		}),
+        new web3._extend.Method({
+			name: 'getSRTBalance',
+			call: 'alien_getSRTBalance',
+			params: 1
+		}),
+        new web3._extend.Method({
+			name: 'getSRTBalanceAtNumber',
+			call: 'alien_getSRTBalanceAtNumber',
+			params: 2
+		}),
+        new web3._extend.Method({
+			name: 'getStorageValueAtNumber',
+			call: 'alien_getStorageValueAtNumber',
+			params: 2
+		}),
+        new web3._extend.Method({
+			name: 'getStorageDecimalValueAtNumber',
+			call: 'alien_getStorageDecimalValueAtNumber',
+			params: 2
+		}),
+        new web3._extend.Method({
+			name: 'GetStorageRatioValueAtNumber',
+			call: 'alien_getStorageRatioValueAtNumber',
+			params: 3
+		}),
+        new web3._extend.Method({
+			name: 'GetSucSPledgeAtNumber',
+			call: 'alien_getSucSPledgeAtNumber',
+			params: 1
+		}),
+        new web3._extend.Method({
+			name: 'GetRentSucAtNumber',
+			call: 'alien_getRentSucAtNumber',
+			params: 1
+		}),
+        new web3._extend.Method({
+			name: 'GetCapSuccAddrsAtNumber',
+			call: 'alien_getCapSuccAddrsAtNumber',
+			params: 1
+		}),
+        new web3._extend.Method({
+			name: 'GetGrantProfitAtNumber',
+			call: 'alien_getGrantProfitAtNumber',
+			params: 1
+		}),
 	]
 });
 `

@@ -25,7 +25,6 @@ import (
 	"github.com/UltronGlow/UltronGlow-Origin/core/types"
 	"github.com/UltronGlow/UltronGlow-Origin/core/vm"
 	"github.com/UltronGlow/UltronGlow-Origin/crypto"
-	"github.com/UltronGlow/UltronGlow-Origin/log"
 	"github.com/UltronGlow/UltronGlow-Origin/params"
 	"math/big"
 )
@@ -93,38 +92,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		//allLogs = append(allLogs, receipt.Logs...)
 		txIndex++
 	}
-	grantProfit, payProfit := p.engine.GrantProfit(p.bc, header, statedb)
-	if nil != grantProfit {
-		nilHash := common.Address{}
-		zeroHash := common.BigToAddress(big.NewInt(0))
-		for _, item := range grantProfit {
-			data := common.FromHex("0xeec31edf") //web3.sha3("GrantProfit(address)") //0xeec31edfe9a5655533e7991d096c3143d669dde6cd213b33851b6cd2fe23c420
-			if nilHash == item.MultiSignature || zeroHash == item.MultiSignature {
-				data = append(data, item.RevenueAddress.Hash().Bytes()...)
-			} else {
-				data = append(data, item.MultiSignature.Hash().Bytes()...)
-			}
-			gasPrice := new(big.Int).SetUint64(176190476190)
-			gasLimit := uint64(5000000000)
-			tx := types.NewTransaction(uint64(txIndex), item.RevenueContract, item.Amount, gasLimit, gasPrice, data)
-			msg := types.NewMessage(item.MinerAddress, &item.RevenueContract, uint64(txIndex), item.Amount, gasLimit, gasPrice, gasPrice, gasPrice, data, nil, false)
-			snap := statedb.Snapshot()
-			statedb.Prepare(tx.Hash(), block.Hash(), txIndex)
-			gasPool := new(GasPool).AddGas(header.GasLimit)
-			receipt, err := GrantProfit(tx, msg, p.config, p.bc, nil, gasPool, statedb, header, usedGas, vmenv.Config)
-			if err == nil {
-				if nil == payProfit {
-					payProfit = []consensus.GrantProfitRecord{}
-				}
-				payProfit = append(payProfit, item)
-				receipts = append(receipts, receipt)
-				txIndex++
-			} else {
-				statedb.RevertToSnapshot(snap)
-				log.Warn("StateProcessor GrantProfit", "err", err)
-			}
-		}
-	}
+	_, payProfit := p.engine.GrantProfit(p.bc, header, statedb)
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	err := p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), receipts, payProfit, vmenv.GasReward)
 	if err != nil {

@@ -133,7 +133,6 @@ func verifyPoc(pocstr []string, roothash string, r uint64) bool {
 }
 
 func verifyB0(block, nonce, blockhash, b0hash string, deviceAddr string) bool {
-	//log.Info("verifyB0","block",block,"nonce",nonce,"b0hash",b0hash,"deviceAddr",deviceAddr)
 	b0 := Sha1([]byte(block + nonce + blockhash + deviceAddr))
 	return b0 == b0hash
 }

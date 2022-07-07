@@ -621,17 +621,23 @@ func (w *worker) resultLoop() {
 				receipts = make([]*types.Receipt, len(task.receipts))
 				logs     []*types.Log
 			)
-			for i, receipt := range task.receipts {
+			for i, taskReceipt := range task.receipts {
+				receipt := new(types.Receipt)
+				receipts[i] = receipt
+				*receipt = *taskReceipt
+
 				// add block location fields
 				receipt.BlockHash = hash
 				receipt.BlockNumber = block.Number()
 				receipt.TransactionIndex = uint(i)
 
-				receipts[i] = new(types.Receipt)
-				*receipts[i] = *receipt
 				// Update the block hash in all logs since it is now available and not when the
 				// receipt/log of individual transactions were created.
-				for _, log := range receipt.Logs {
+				receipt.Logs = make([]*types.Log, len(taskReceipt.Logs))
+				for i, taskLog := range taskReceipt.Logs {
+					log := new(types.Log)
+					receipt.Logs[i] = log
+					*log = *taskLog
 					log.BlockHash = hash
 				}
 				logs = append(logs, receipt.Logs...)
@@ -1067,55 +1073,8 @@ func (w *worker) commit(uncles []*types.Header, interval func(), update bool, st
 	s := w.current.state.Copy()
 	parent := w.chain.CurrentBlock()
 	if w.chainConfig.Alien != nil {
-/*
-		var payProfit []consensus.GrantProfitRecord
-		grantProfit := []consensus.GrantProfitRecord{
-			{
-				Which: 0,
-				MinerAddress: common.HexToAddress("0x9b9a5dc603210e2b333584f297197eb1949aa14c"),
-				BlockNumber: 0,
-				Amount: new(big.Int).Mul(big.NewInt(100), big.NewInt(1e+18)),
-				RevenueAddress: common.HexToAddress("0x22e0ee6cc849fd88b06229ae3eb1391db9367cd0"),
-				RevenueContract: common.HexToAddress("0x79c359aF3C2f7C4b4fDE49852069Adc15d79e2A3"),
-				MultiSignature: common.HexToAddress("0x29c80162e3741da816c9a7dadac8a6df984cf5d1"),
-			},
-		}
- */
-		grantProfit, payProfit := w.engine.GrantProfit(w.chain, w.current.header, s)
-		if nil != grantProfit {
-			nilHash := common.Address{}
-			zeroHash := common.BigToAddress(big.NewInt(0))
-			txIndex := w.current.tcount
-			for _, item := range grantProfit {
-				data := common.FromHex("0xeec31edf") //web3.sha3("GrantProfit(address)") //0xeec31edfe9a5655533e7991d096c3143d669dde6cd213b33851b6cd2fe23c420
-				if nilHash == item.MultiSignature || zeroHash == item.MultiSignature {
-					data = append(data, item.RevenueAddress.Hash().Bytes()...)
-				} else {
-					data = append(data, item.MultiSignature.Hash().Bytes()...)
-				}
-				gasPrice := new(big.Int).SetUint64(176190476190)
-				gasLimit := uint64(5000000000)
-				tx := types.NewTransaction(uint64(txIndex), item.RevenueContract, item.Amount, gasLimit, gasPrice, data)
-				msg := types.NewMessage(item.MinerAddress, &item.RevenueContract, uint64(txIndex), item.Amount, gasLimit, gasPrice, gasPrice, gasPrice, data, nil,false)
-				// Start executing the transaction
-				snap := s.Snapshot()
-				s.Prepare(tx.Hash(), common.Hash{}, txIndex)
-				gasPool := new(core.GasPool).AddGas(w.current.header.GasLimit)
-				receipt, err := core.GrantProfit(tx, msg, w.chainConfig, w.chain, &w.coinbase, gasPool, s, w.current.header, &w.current.header.GasUsed, *w.chain.GetVMConfig())
-				if err == nil {
-					if nil == payProfit {
-						payProfit = []consensus.GrantProfitRecord{}
-					}
-					payProfit = append(payProfit, item)
-					w.current.receipts = append(w.current.receipts, receipt)
-					txIndex++
-				} else {
-					s.RevertToSnapshot(snap)
-					log.Warn("worker GrantProfit", "err", err)
-				}
-			}
-		}
-log.Warn("worker commit", "number", w.current.header.Number, "GasReward", w.current.GasReward)
+		_, payProfit := w.engine.GrantProfit(w.chain, w.current.header, s)
+        log.Warn("worker commit", "number", w.current.header.Number, "GasReward", w.current.GasReward)
 		block, err = w.engine.FinalizeAndAssemble(w.chain, w.current.header, s, w.current.txs, uncles, receipts, payProfit, w.current.GasReward)
 	} else {
 		block, err = w.engine.FinalizeAndAssemble(w.chain, w.current.header, s, w.current.txs, uncles, receipts, nil, w.current.GasReward)

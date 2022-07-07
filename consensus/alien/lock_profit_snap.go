@@ -18,6 +18,7 @@ const (
 	LOCKREWARDDATA    = "reward"
 	LOCKFLOWDATA      = "flow"
 	LOCKBANDWIDTHDATA = "bandwidth"
+	LOCKPOSEXITDATA = "posplexit"
 )
 
 type RlsLockData struct {
@@ -264,7 +265,7 @@ func (s *LockData) payProfit(hash common.Hash, db ethdb.Database, period uint64,
 	return currentGrantProfit, playGrantProfit, nil
 }
 
-func (s *LockData) updateGrantProfit(grantProfit []consensus.GrantProfitRecord, db ethdb.Database, hash common.Hash) error {
+func (s *LockData) updateGrantProfit(grantProfit []consensus.GrantProfitRecord, db ethdb.Database, hash common.Hash,number uint64) error {
 
 	rlsLockBalance := make(map[common.Address]*RlsLockData)
 
@@ -313,7 +314,7 @@ func (s *LockData) updateGrantProfit(grantProfit []consensus.GrantProfitRecord, 
 		}
 	}
 	if hasChanged {
-			s.saveCacheL2(db, rlsLockBalance, hash)
+			s.saveCacheL2(db, rlsLockBalance, hash,number)
 	}
 	return nil
 }
@@ -589,7 +590,7 @@ func (s *LockData) saveCacheL1(db ethdb.Database, hash common.Hash) error {
 	return nil
 }
 
-func (s *LockData) saveCacheL2(db ethdb.Database, rlsLockBalance map[common.Address]*RlsLockData, hash common.Hash) error {
+func (s *LockData) saveCacheL2(db ethdb.Database, rlsLockBalance map[common.Address]*RlsLockData, hash common.Hash,number uint64) error {
 	items := []*PledgeItem{}
 	for _, pledges := range rlsLockBalance {
 		for _, pledge1 := range pledges.LockBalance {
@@ -611,7 +612,7 @@ func (s *LockData) saveCacheL2(db ethdb.Database, rlsLockBalance map[common.Addr
 	}
 	s.CacheL1 = []common.Hash{}
 	s.CacheL2 = hash
-	log.Info("LockProfitSnap saveCacheL2", "Locktype", s.Locktype, "cache hash", hash, "len", len(items))
+	log.Info("LockProfitSnap saveCacheL2", "Locktype", s.Locktype, "cache hash", hash, "len", len(items),"number",number)
 	return nil
 }
 
@@ -649,6 +650,7 @@ type LockProfitSnap struct {
 	RewardLock    *LockData   `json:"reward"`
 	FlowLock      *LockData   `json:"flow"`
 	BandwidthLock *LockData   `json:"bandwidth"`
+	PosPgExitLock *LockData   `json:"storagePgExit"`
 }
 
 func NewLockProfitSnap() *LockProfitSnap {
@@ -658,16 +660,33 @@ func NewLockProfitSnap() *LockProfitSnap {
 		RewardLock:    NewLockData(LOCKREWARDDATA),
 		FlowLock:      NewLockData(LOCKFLOWDATA),
 		BandwidthLock: NewLockData(LOCKBANDWIDTHDATA),
+		PosPgExitLock: NewLockData(LOCKPOSEXITDATA),
 	}
 }
 func (s *LockProfitSnap) copy() *LockProfitSnap {
-	clone := &LockProfitSnap{
-		Number:        s.Number,
-		Hash:          s.Hash,
-		RewardLock:    s.RewardLock.copy(),
-		FlowLock:      s.FlowLock.copy(),
-		BandwidthLock: s.BandwidthLock.copy(),
+	if s.Number <PledgeRevertLockEffectNumber{
+		clone := &LockProfitSnap{
+			Number:        s.Number,
+			Hash:          s.Hash,
+			RewardLock:    s.RewardLock.copy(),
+			FlowLock:      s.FlowLock.copy(),
+			BandwidthLock: s.BandwidthLock.copy(),
+		}
+		return clone
 	}
+	if s.PosPgExitLock == nil {
+	   s.PosPgExitLock =NewLockData(LOCKPOSEXITDATA)
+	}
+		clone := &LockProfitSnap{
+			Number:        s.Number,
+			Hash:          s.Hash,
+			RewardLock:    s.RewardLock.copy(),
+			FlowLock:      s.FlowLock.copy(),
+			BandwidthLock: s.BandwidthLock.copy(),
+			PosPgExitLock: s.PosPgExitLock.copy(),
+		}
+
+
 	return clone
 }
 
@@ -684,6 +703,8 @@ func (s *LockProfitSnap) updateLockData(snap *Snapshot, LockReward []LockRewardR
 			s.FlowLock.updateLockData(snap, item, headerNumber)
 		} else if sscEnumBandwidthReward == item.IsReward {
 			s.BandwidthLock.updateLockData(snap, item, headerNumber)
+		}else if sscEnumStoragePledgeRedeemLock == item.IsReward {
+			s.PosPgExitLock.updateLockData(snap, item, headerNumber)
 		}
 	}
 	if islockSimplifyEffectBlocknumber(blockNumber) {
@@ -711,11 +732,16 @@ func (s *LockProfitSnap) payProfit(db ethdb.Database, period uint64, headerNumbe
 		log.Info("LockProfitSnap pay bandwidth profit")
 		return s.BandwidthLock.payProfit(s.Hash, db, period, headerNumber, currentGrantProfit, playGrantProfit, header, state, payAddressAll)
 	}
+	if isPayPosPledgeExit(number, period) {
+		log.Info("LockProfitSnap pay POS pledge exit amount")
+		return s.PosPgExitLock.payProfit(s.Hash, db, period, headerNumber, currentGrantProfit, playGrantProfit, header, state, payAddressAll)
+	}
+
 	return currentGrantProfit, playGrantProfit, nil
 }
 
-func (snap *LockProfitSnap) updateGrantProfit(grantProfit []consensus.GrantProfitRecord, db ethdb.Database) {
-	shouldUpdateReward, shouldUpdateFlow, shouldUpdateBandwidth := false, false, false
+func (snap *LockProfitSnap) updateGrantProfit(grantProfit []consensus.GrantProfitRecord, db ethdb.Database, headerHash common.Hash, number uint64) {
+	shouldUpdateReward, shouldUpdateFlow, shouldUpdateBandwidth,shouldUpdatePosPgExit := false, false, false,false
 	for _, item := range grantProfit {
 		if 0 != item.BlockNumber {
 			if item.Which == sscEnumSignerReward {
@@ -724,26 +750,37 @@ func (snap *LockProfitSnap) updateGrantProfit(grantProfit []consensus.GrantProfi
 				shouldUpdateFlow = true
 			} else if item.Which == sscEnumBandwidthReward {
 				shouldUpdateBandwidth = true
+			}else if item.Which == sscEnumStoragePledgeRedeemLock {
+				shouldUpdatePosPgExit = true
 			}
 		}
 	}
-
+    storeHash:=snap.Hash
+    if number>=PledgeRevertLockEffectNumber{
+		storeHash=headerHash
+	}
 	if shouldUpdateReward {
-		err := snap.RewardLock.updateGrantProfit(grantProfit, db, snap.Hash)
+		err := snap.RewardLock.updateGrantProfit(grantProfit, db, storeHash,number)
 		if err != nil {
 			log.Warn("updateGrantProfit Reward Error", "err", err)
 		}
 	}
 	if shouldUpdateFlow {
-		err := snap.FlowLock.updateGrantProfit(grantProfit, db, snap.Hash)
+		err := snap.FlowLock.updateGrantProfit(grantProfit, db, storeHash,number)
 		if err != nil {
 			log.Warn("updateGrantProfit Flow Error", "err", err)
 		}
 	}
 	if shouldUpdateBandwidth {
-		err := snap.BandwidthLock.updateGrantProfit(grantProfit, db, snap.Hash)
+		err := snap.BandwidthLock.updateGrantProfit(grantProfit, db, storeHash,number)
 		if err != nil {
 			log.Warn("updateGrantProfit Bandwidth Error", "err", err)
+		}
+	}
+	if shouldUpdatePosPgExit {
+		err := snap.PosPgExitLock.updateGrantProfit(grantProfit, db, storeHash,number)
+		if err != nil {
+			log.Warn("updateGrantProfit Pos pledge exit amount Error", "err", err)
 		}
 	}
 }
@@ -757,6 +794,12 @@ func (snap *LockProfitSnap) saveCacheL1(db ethdb.Database) error {
 	if err != nil {
 		return err
 	}
+	if snap.Number >= PledgeRevertLockEffectNumber && snap.PosPgExitLock!=nil{
+		err = snap.PosPgExitLock.saveCacheL1(db, snap.Hash)
+		if err != nil {
+			return err
+		}
+	}
 	return snap.BandwidthLock.saveCacheL1(db, snap.Hash)
 }
 
@@ -767,4 +810,53 @@ func PledgeItemEncodeRlp(items []*PledgeItem) (error, []byte) {
 		return err, nil
 	}
 	return nil, out.Bytes()
+}
+
+func (s *LockData) calPayProfit(db ethdb.Database,playGrantProfit []consensus.GrantProfitRecord, header *types.Header) ([]consensus.GrantProfitRecord, error) {
+	timeNow := time.Now()
+
+	rlsLockBalance := make(map[common.Address]*RlsLockData)
+	items := []*PledgeItem{}
+	for _, pledges := range s.FlowRevenue {
+		for _, pledge1 := range pledges.LockBalance {
+			for _, pledge := range pledge1 {
+				items = append(items, pledge)
+			}
+		}
+	}
+	s.appendRlsLockData(rlsLockBalance, items)
+
+	items, err := s.loadCacheL1(db)
+	if err != nil {
+		return playGrantProfit, err
+	}
+	s.appendRlsLockData(rlsLockBalance, items)
+	items, err = s.loadCacheL2(db)
+	if err != nil {
+		return playGrantProfit, err
+	}
+	s.appendRlsLockData(rlsLockBalance, items)
+
+	log.Info("calPayProfit load from disk", "Locktype", s.Locktype, "len(rlsLockBalance)", len(rlsLockBalance), "elapsed", time.Since(timeNow), "number", header.Number.Uint64())
+
+	for address, items := range rlsLockBalance {
+		for blockNumber, item1 := range items.LockBalance {
+			for which, item := range item1 {
+				amount := calPaymentPledge( item, header)
+				if nil!= amount {
+					playGrantProfit = append(playGrantProfit, consensus.GrantProfitRecord{
+						Which:           which,
+						MinerAddress:    address,
+						BlockNumber:     blockNumber,
+						Amount:          new(big.Int).Set(amount),
+						RevenueAddress:  item.RevenueAddress,
+						RevenueContract: item.RevenueContract,
+						MultiSignature:  item.MultiSignature,
+					})
+				}
+			}
+		}
+	}
+	log.Info("calPayProfit ", "Locktype", s.Locktype, "elapsed", time.Since(timeNow), "number", header.Number.Uint64())
+	return playGrantProfit, nil
 }

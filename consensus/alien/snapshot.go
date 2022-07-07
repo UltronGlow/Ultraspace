@@ -28,7 +28,9 @@ import (
 	"github.com/UltronGlow/UltronGlow-Origin/ethdb"
 	"github.com/UltronGlow/UltronGlow-Origin/log"
 	"github.com/UltronGlow/UltronGlow-Origin/params"
+	"github.com/UltronGlow/UltronGlow-Origin/rlp"
 	"github.com/hashicorp/golang-lru"
+	"golang.org/x/crypto/sha3"
 	"math/big"
 	"sort"
 	"strings"
@@ -221,10 +223,12 @@ type Snapshot struct {
 	TallySigner       map[common.Address]uint64      `json:"tallySigner"`
 	//StoragePledge      map[common.Address]*PledgeItem                    `json:"Storagepledge"`
 	StorageData *StorageData `json:"storagedata"`
-	SRTIndex *SRTIndex `json:"srtindex"`
+
 	ExStateRoot     common.Hash                    `json:"extrasstateRoot"`
 	GrantListRoot   common.Hash                    `json:"grantListRoot"`
 	RevenueStorage    map[common.Address]*RevenueParameter             `json:"storagerevenueaddress"`
+	SRT            SRTState                             `json:"srt"`
+	SRTHash        common.Hash                          `json:"srthash"`
 }
 
 var (
@@ -354,6 +358,7 @@ func newSnapshot(config *params.AlienConfig, sigcache *lru.ARCCache, hash common
 	snap.SystemConfig.Deposit[sscEnumPStoragePledgeID] = new(big.Int).Set(storagePledgeIndex)
 	snap.SystemConfig.Deposit[sscEnumLeaseExpires] = new(big.Int).Set(defaultLeaseExpires)
 	snap.SystemConfig.Deposit[sscEnumMinimumRent] = new(big.Int).Set(minimumRentDay)
+	snap.SystemConfig.Deposit[sscEnumMaximumRent] = new(big.Int).Set(maximumRentDay)
 	return snap
 }
 
@@ -442,6 +447,21 @@ func loadSnapshot(config *params.AlienConfig, sigcache *lru.ARCCache, db ethdb.D
 	if _, ok := snap.SystemConfig.Deposit[sscEnumMinimumRent]; !ok || 0 > snap.SystemConfig.Deposit[sscEnumMinimumRent].Cmp(big.NewInt(0)) {
 		snap.SystemConfig.Deposit[sscEnumMinimumRent] = new(big.Int).Set(minimumRentDay)
 	}
+	if _, ok := snap.SystemConfig.Deposit[sscEnumMaximumRent]; !ok || 0 > snap.SystemConfig.Deposit[sscEnumMaximumRent].Cmp(big.NewInt(0)) {
+		snap.SystemConfig.Deposit[sscEnumMaximumRent] = new(big.Int).Set(maximumRentDay)
+	}
+	nilHash:=common.Hash{}
+	if snap.SRTHash!=nilHash{
+		snap.SRT,err=NewSRT(snap.SRTHash,db)
+		if err!=nil {
+			return  nil,err
+		}
+		err=snap.SRT.Load(db,snap.SRTHash)
+		if err!=nil {
+				return  nil,err
+		}
+	}
+
 	return snap, nil
 }
 
@@ -455,6 +475,14 @@ func (s *Snapshot) store(db ethdb.Database) error {
 	if err != nil {
 		return err
 	}
+	if s.SRT != nil {
+		s.SRTHash, err = s.SRT.Save(db)
+		if err != nil {
+			return err
+		}
+		//s.SRTHash=s.SRT.Root()
+	}
+
 	blob, err := json.Marshal(s)
 	if err != nil {
 		return err
@@ -521,9 +549,15 @@ func (s *Snapshot) copy() *Snapshot {
 		ExStateRoot:s.ExStateRoot,
 		GrantListRoot:s.GrantListRoot,
 		RevenueStorage:  make(map[common.Address]*RevenueParameter),
+		SRT:            nil,
+		SRTHash: s.SRTHash,
 	}
 	if s.StorageData!=nil{
 	   cpy.StorageData = s.StorageData.copy()
+	}
+	if s.SRT != nil {
+		cpy.SRT = s.SRT.Copy()
+		cpy.SRTHash = cpy.SRT.Root()
 	}
 	copy(cpy.HistoryHash, s.HistoryHash)
 	copy(cpy.Signers, s.Signers)
@@ -729,6 +763,9 @@ func (s *Snapshot) copy() *Snapshot {
 	if _, ok := cpy.SystemConfig.Deposit[sscEnumMinimumRent]; !ok || 0 > cpy.SystemConfig.Deposit[sscEnumMinimumRent].Cmp(big.NewInt(0)) {
 		cpy.SystemConfig.Deposit[sscEnumMinimumRent] = new(big.Int).Set(minimumRentDay)
 	}
+	if _, ok := cpy.SystemConfig.Deposit[sscEnumMaximumRent]; !ok || 0 > cpy.SystemConfig.Deposit[sscEnumMaximumRent].Cmp(big.NewInt(0)) {
+		cpy.SystemConfig.Deposit[sscEnumMaximumRent] = new(big.Int).Set(maximumRentDay)
+	}
 	if _, ok := cpy.SystemConfig.LockParameters[sscEnumCndLock]; !ok {
 		cpy.SystemConfig.LockParameters[sscEnumCndLock] = &LockParameter{
 			LockPeriod: uint32(180 * 24 * 60 * 60 / cpy.Period),
@@ -871,7 +908,10 @@ func (s *Snapshot) apply(headers []*types.Header, db ethdb.Database) (*Snapshot,
 
 		snap.updateFlowMiner(header, db)
 		snap.updateMinerStack(headerExtra.MinerStake)
-		snap.updateGrantProfit(headerExtra.GrantProfit, db)
+
+		snap.compareGrantProfitHash(headerExtra.GrantProfit,db,header)
+
+		snap.updateGrantProfit(headerExtra.GrantProfit, db,header.Hash(),header.Number.Uint64())
 		if header.Number.Uint64() == lockMergeNumber  {
 			snap.FlowRevenue.updateMergeLockData(db,snap.Period,snap.Hash)
 		}
@@ -907,6 +947,13 @@ func (s *Snapshot) apply(headers []*types.Header, db ethdb.Database) (*Snapshot,
 		if header.Number.Uint64() >= StorageChBwEffectNumber{
 			snap.updateStorageBandWidth(headerExtra.StorageExchangeBw, header.Number, nil)
 		}
+		if header.Number.Uint64() ==(PledgeRevertLockEffectNumber-1) {
+			snap.SRT,err = NewSRT(common.Hash{},db)
+			if err!=nil{
+				return snap,nil
+			}
+			snap.FlowRevenue.PosPgExitLock=NewLockData(LOCKPOSEXITDATA)
+		}
 	}
 	snap.Number += uint64(len(headers))
 	snap.Hash = headers[len(headers)-1].Hash()
@@ -915,6 +962,12 @@ func (s *Snapshot) apply(headers []*types.Header, db ethdb.Database) (*Snapshot,
 	err := snap.verifyTallyCnt()
 	if err != nil {
 		return nil, err
+	}
+	if snap.SRT!=nil{
+		snap.SRTHash, err = snap.SRT.Save(db)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return snap, nil
 }
@@ -1170,7 +1223,7 @@ func (snap *Snapshot) updateExchangeNFC(exchangeNFC []ExchangeNFCRecord) {
 	}
 }
 
-func (snap *Snapshot) updateGrantProfit(grantProfit []consensus.GrantProfitRecord, db ethdb.Database) {
+func (snap *Snapshot) updateGrantProfit(grantProfit []consensus.GrantProfitRecord, db ethdb.Database, headerHash common.Hash, number uint64) {
 	for _, item := range grantProfit {
 		if 0 == item.BlockNumber {
 			if sscEnumCndLock == item.Which {
@@ -1190,7 +1243,7 @@ func (snap *Snapshot) updateGrantProfit(grantProfit []consensus.GrantProfitRecor
 			}
 		}
 	}
-	snap.FlowRevenue.updateGrantProfit(grantProfit, db)
+	snap.FlowRevenue.updateGrantProfit(grantProfit, db,headerHash,number)
 }
 
 func (snap *Snapshot) updateMinerStack(minerStake []MinerStakeRecord) {
@@ -2136,81 +2189,6 @@ func (s *Snapshot) updateSignerNumber(sigers []common.Address, headerNumber uint
 	}
 }
 
-func (s *Snapshot) payProfit(db ethdb.Database, headerNumber uint64, header *types.Header, state *state.StateDB) ([]consensus.GrantProfitRecord, []consensus.GrantProfitRecord, error) {
-	var playGrantProfit []consensus.GrantProfitRecord
-	var currentGrantProfit []consensus.GrantProfitRecord
-
-	number := header.Number.Uint64()
-	if number == 0 {
-		return currentGrantProfit, playGrantProfit, nil
-	}
-	period := s.Period
-	payAddressAll := make(map[common.Address]*big.Int)
-	for address, item := range s.CandidatePledge {
-		result, amount := paymentPledge(false, item, state, header, payAddressAll)
-		if 0 == result {
-			playGrantProfit = append(playGrantProfit, consensus.GrantProfitRecord{
-				Which:           sscEnumCndLock,
-				MinerAddress:    address,
-				BlockNumber:     0,
-				Amount:          new(big.Int).Set(amount),
-				RevenueAddress:  item.RevenueAddress,
-				RevenueContract: item.RevenueContract,
-				MultiSignature:  item.MultiSignature,
-			})
-
-		} else if 1 == result {
-			currentGrantProfit = append(currentGrantProfit, consensus.GrantProfitRecord{
-				Which:           sscEnumCndLock,
-				MinerAddress:    address,
-				BlockNumber:     0,
-				Amount:          new(big.Int).Set(amount),
-				RevenueAddress:  item.RevenueAddress,
-				RevenueContract: item.RevenueContract,
-				MultiSignature:  item.MultiSignature,
-			})
-		}
-	}
-	for address, item := range s.FlowPledge {
-		result, amount := paymentPledge(true, item, state, header, payAddressAll)
-		if 0 == result {
-			playGrantProfit = append(playGrantProfit, consensus.GrantProfitRecord{
-				Which:           sscEnumFlwLock,
-				MinerAddress:    address,
-				BlockNumber:     0,
-				Amount:          new(big.Int).Set(amount),
-				RevenueAddress:  item.RevenueAddress,
-				RevenueContract: item.RevenueContract,
-				MultiSignature:  item.MultiSignature,
-			})
-		} else if 1 == result {
-			currentGrantProfit = append(currentGrantProfit, consensus.GrantProfitRecord{
-				Which:           sscEnumFlwLock,
-				MinerAddress:    address,
-				BlockNumber:     0,
-				Amount:          new(big.Int).Set(amount),
-				RevenueAddress:  item.RevenueAddress,
-				RevenueContract: item.RevenueContract,
-				MultiSignature:  item.MultiSignature,
-			})
-		}
-	}
-
-	if isPaySignerRewards(number, period) {
-		log.Info("LockProfitSnap pay reward profit")
-		return s.FlowRevenue.RewardLock.payProfit(s.Hash, db, period, headerNumber, currentGrantProfit, playGrantProfit, header, state, payAddressAll)
-	}
-	if isPayFlowRewards(number, period) {
-		log.Info("LockProfitSnap pay flow profit")
-		return s.FlowRevenue.FlowLock.payProfit(s.Hash, db, period, headerNumber, currentGrantProfit, playGrantProfit, header, state, payAddressAll)
-	}
-	if isPayBandWidthRewards(number, period) {
-		log.Info("LockProfitSnap pay bandwidth profit")
-		return s.FlowRevenue.BandwidthLock.payProfit(s.Hash, db, period, headerNumber, currentGrantProfit, playGrantProfit, header, state, payAddressAll)
-	}
-	return currentGrantProfit, playGrantProfit, nil
-}
-
 func (pitem *PledgeItem) copy() *PledgeItem {
 	return &PledgeItem{
 		Amount:          new(big.Int).Set(pitem.Amount),
@@ -2250,5 +2228,88 @@ func (f *FlowMinerReport) copy() *FlowMinerReport {
 		ReportNumber: f.ReportNumber,
 		FlowValue1:   f.FlowValue1,
 		FlowValue2:   f.FlowValue2,
+	}
+}
+
+func(snap *Snapshot) calGrantProfitHash(profit []consensus.GrantProfitRecord) common.Hash {
+	grantProfitSlice:=consensus.GrantProfitSlice(profit)
+	sort.Sort(grantProfitSlice)
+	hasher := sha3.NewLegacyKeccak256()
+	rlp.Encode(hasher, grantProfitSlice)
+	var hash common.Hash
+	hasher.Sum(hash[:0])
+	return hash
+}
+func (s *Snapshot) calPayProfit(db ethdb.Database,header *types.Header) ([]consensus.GrantProfitRecord, error) {
+	var playGrantProfit []consensus.GrantProfitRecord
+	number := header.Number.Uint64()
+	if number == 0 {
+		return playGrantProfit, nil
+	}
+	period := s.Period
+	for address, item := range s.CandidatePledge {
+		amount := calPaymentPledge(item, header)
+		if nil != amount {
+			playGrantProfit = append(playGrantProfit, consensus.GrantProfitRecord{
+				Which:           sscEnumCndLock,
+				MinerAddress:    address,
+				BlockNumber:     0,
+				Amount:          new(big.Int).Set(amount),
+				RevenueAddress:  item.RevenueAddress,
+				RevenueContract: item.RevenueContract,
+				MultiSignature:  item.MultiSignature,
+			})
+		}
+	}
+	for address, item := range s.FlowPledge {
+		amount := calPaymentPledge(item, header)
+		if nil != amount {
+			playGrantProfit = append(playGrantProfit, consensus.GrantProfitRecord{
+				Which:           sscEnumFlwLock,
+				MinerAddress:    address,
+				BlockNumber:     0,
+				Amount:          new(big.Int).Set(amount),
+				RevenueAddress:  item.RevenueAddress,
+				RevenueContract: item.RevenueContract,
+				MultiSignature:  item.MultiSignature,
+			})
+		}
+	}
+
+	if isPaySignerRewards(number, period) {
+		log.Info("LockProfitSnap cal pay reward profit")
+		return s.FlowRevenue.RewardLock.calPayProfit(db, playGrantProfit, header)
+	}
+	if isPayFlowRewards(number, period) {
+		log.Info("LockProfitSnap cal pay flow profit")
+		return s.FlowRevenue.FlowLock.calPayProfit(db, playGrantProfit, header)
+	}
+	if isPayBandWidthRewards(number, period) {
+		log.Info("LockProfitSnap cal pay bandwidth profit")
+		return s.FlowRevenue.BandwidthLock.calPayProfit(db, playGrantProfit, header)
+	}
+	if isPayPosPledgeExit(number, period) {
+		if s.FlowRevenue.PosPgExitLock!=nil {
+			log.Info("LockProfitSnap cal pay POS pledge exit amount")
+			return s.FlowRevenue.PosPgExitLock.calPayProfit(db, playGrantProfit, header)
+		}
+	}
+	return playGrantProfit, nil
+}
+
+func (s *Snapshot) compareGrantProfitHash(GrantProfit []consensus.GrantProfitRecord, db ethdb.Database, header *types.Header) {
+	if CompareGrantProfitHash {
+		number:=header.Number.Uint64()
+		calGrantProfitHash1:=s.calGrantProfitHash(GrantProfit)
+		calGrantProfit,calErr := s.calPayProfit(db, header)
+		if calErr!=nil{
+			log.Error("cal GrantProfit","err" ,calErr,"number",number)
+		}
+		calGrantProfitHash2:=s.calGrantProfitHash(calGrantProfit)
+		if calGrantProfitHash1!=calGrantProfitHash2{
+			log.Error("grantProfitHash is not same","head" , calGrantProfitHash1 , "cal", calGrantProfitHash2,"number",number)
+		}else{
+			log.Info("grantProfitHash is same","head" , calGrantProfitHash1 , "cal", calGrantProfitHash2,"number",number)
+		}
 	}
 }
