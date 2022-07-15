@@ -219,7 +219,7 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, genesis *Genesis, override
 	// Special case: don't change the existing config of a non-mainnet chain if no new
 	// config is supplied. These chains would get AllProtocolChanges (and a compat error)
 	// if we just continued here.
-	if genesis == nil && stored != params.MainnetGenesisHash {
+	if genesis == nil && (stored != params.MainnetGenesisHash && stored != params.MainnetGenesisHash2) {
 		return storedcfg, stored, nil
 	}
 	// Check config compatibility and write the config. Compatibility errors
@@ -232,15 +232,29 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, genesis *Genesis, override
 	if compatErr != nil && *height != 0 && compatErr.RewindTo != 0 {
 		return newcfg, stored, compatErr
 	}
-	rawdb.WriteChainConfig(db, stored, newcfg)
+	storedCfgData, err := json.Marshal(storedcfg)
+	if err != nil {
+		log.Crit("Failed to JSON encode stored chain config", "err", err)
+	}
+	newCfgData, err := json.Marshal(newcfg)
+	if err != nil {
+		log.Crit("Failed to JSON encode new chain config", "err", err)
+	}
+	if string(storedCfgData)!=string(newCfgData) {
+		log.Warn("The chain config changed. write new config.","store cfg",string(storedCfgData),"new cfg",string(newCfgData))
+		rawdb.WriteChainConfig(db, stored, newcfg)
+	}
 	return newcfg, stored, nil
 }
 
 func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
+	log.Info("Genesis.configOrDefault","ghash",ghash)
 	switch {
 	case g != nil:
 		return g.Config
 	case ghash == params.MainnetGenesisHash:
+		return params.MainnetChainConfig
+	case ghash == params.MainnetGenesisHash2:
 		return params.MainnetChainConfig
 	case ghash == params.TestnetGenesisHash:
 		return params.TestnetChainConfig
