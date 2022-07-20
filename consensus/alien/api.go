@@ -990,3 +990,23 @@ func (api *API) GetGrantProfitAtNumber(number uint64) ([]consensus.GrantProfitRe
 	}
 	return grantProfit, err
 }
+
+type SnapshotSTGbwMakeup struct {
+	STGBandwidthMakeup map[common.Address]*BandwidthMakeup `json:"stgbandwidthmakeup"`
+}
+
+func (api *API) GetSTGBandwidthMakeup() (*SnapshotSTGbwMakeup, error) {
+	header := api.chain.GetHeaderByNumber(StoragePledgeOptEffectNumber)
+	if header == nil {
+		return nil, errUnknownBlock
+	}
+	snapshot,err:= api.alien.snapshot(api.chain, header.Number.Uint64(), header.Hash(), nil, nil, defaultLoopCntRecalculateSigners)
+	if err != nil {
+		log.Warn("Fail to GetSPledgeCapVerAtNumber", "err", err)
+		return nil, errUnknownBlock
+	}
+	snapshotSTGbwMakeup := &SnapshotSTGbwMakeup{
+		STGBandwidthMakeup: snapshot.STGBandwidthMakeup,
+	}
+	return snapshotSTGbwMakeup, err
+}

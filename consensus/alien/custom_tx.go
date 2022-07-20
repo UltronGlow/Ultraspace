@@ -395,6 +395,60 @@ type HeaderExtra struct {
 	StorageDataRoot common.Hash
 	StorageExchangeBw []StorageExchangeBwRecord
 	SRTDataRoot common.Hash
+	StorageBwPay [] StorageBwPayRecord
+}
+type StorageHeaderExtraV3 struct {
+	CurrentBlockConfirmations []Confirmation
+	CurrentBlockVotes         []Vote
+	CurrentBlockProposals     []Proposal
+	CurrentBlockDeclares      []Declare
+	ModifyPredecessorVotes    []Vote
+	LoopStartTime             uint64
+	SignerQueue               []common.Address
+	SignerMissing             []common.Address
+	ConfirmedBlockNumber      uint64
+	SideChainConfirmations    []SCConfirmation
+	SideChainSetCoinbases     []SCSetCoinbase
+	SideChainNoticeConfirmed  []SCConfirmation
+	SideChainCharging         []GasCharging //This only exist in side chain's header.Extra
+
+	ExchangeNFC               []ExchangeNFCRecord
+	DeviceBind                []DeviceBindRecord
+	CandidatePledge           []CandidatePledgeRecord
+	CandidatePunish           []CandidatePunishRecord
+	MinerStake                []MinerStakeRecord
+	CandidateExit             []common.Address
+	ClaimedBandwidth          []ClaimedBandwidthRecord
+	FlowMinerExit             []common.Address
+	BandwidthPunish           []BandwidthPunishRecord
+	ConfigExchRate            uint32
+	ConfigOffLine             uint32
+	ConfigDeposit             []ConfigDepositRecord
+	ConfigISPQOS              []ISPQOSRecord
+	LockParameters            []LockParameterRecord
+	ManagerAddress            []ManagerAddressRecord
+	FlowHarvest               *big.Int
+	LockReward                []LockRewardRecord
+	GrantProfit               []consensus.GrantProfitRecord
+	FlowReport                []MinerFlowReportRecord
+
+	StoragePledge       [] SPledgeRecord
+	StoragePledgeExit   [] SPledgeExitRecord
+	LeaseRequest        []LeaseRequestRecord
+	ExchangeSRT         []ExchangeSRTRecord
+	LeasePledge         []LeasePledgeRecord
+	LeaseRenewal        []LeaseRenewalRecord
+	LeaseRenewalPledge  []LeaseRenewalPledgeRecord
+	LeaseRescind        []LeaseRescindRecord
+	StorageRecoveryData [] SPledgeRecoveryRecord
+	StorageProofRecord  [] StorageProofRecord
+
+	StorageExchangePrice [] StorageExchangePriceRecord
+	ExtraStateRoot common.Hash
+	LockAccountsRoot common.Hash
+	StorageDataRoot common.Hash
+	StorageExchangeBw []StorageExchangeBwRecord
+	SRTDataRoot common.Hash
 }
 type StorageHeaderExtraV2 struct {
 	CurrentBlockConfirmations []Confirmation
@@ -720,6 +774,58 @@ func encodeHeaderExtra(config *params.AlienConfig, number *big.Int, val HeaderEx
 				StorageExchangeBw:val.StorageExchangeBw,
 			}
 			return rlp.EncodeToBytes(headerExtrav2)
+		}else if number.Uint64() <StoragePledgeOptEffectNumber{
+			headerExtrav3:=StorageHeaderExtraV3{
+				CurrentBlockConfirmations :val.CurrentBlockConfirmations,
+				CurrentBlockVotes:val.CurrentBlockVotes,
+				CurrentBlockProposals:val.CurrentBlockProposals,
+				CurrentBlockDeclares:val.CurrentBlockDeclares,
+				ModifyPredecessorVotes:val.ModifyPredecessorVotes,
+				LoopStartTime:val.LoopStartTime,
+				SignerQueue:val.SignerQueue,
+				SignerMissing:val.SignerMissing,
+				ConfirmedBlockNumber:val.ConfirmedBlockNumber,
+				SideChainConfirmations:val.SideChainConfirmations,
+				SideChainSetCoinbases:val.SideChainSetCoinbases,
+				SideChainNoticeConfirmed:val.SideChainNoticeConfirmed,
+				SideChainCharging:val.SideChainCharging,
+				ExchangeNFC:val.ExchangeNFC,
+				DeviceBind :val.DeviceBind,
+				CandidatePledge:val.CandidatePledge,
+				CandidatePunish:val.CandidatePunish,
+				MinerStake:val.MinerStake,
+				CandidateExit:val.CandidateExit,
+				ClaimedBandwidth:val.ClaimedBandwidth,
+				FlowMinerExit:val.FlowMinerExit,
+				BandwidthPunish:val.BandwidthPunish,
+				ConfigExchRate:val.ConfigExchRate,
+				ConfigOffLine:val.ConfigOffLine,
+				ConfigDeposit :val.ConfigDeposit,
+				ConfigISPQOS:val.ConfigISPQOS,
+				LockParameters:val.LockParameters,
+				ManagerAddress :val.ManagerAddress,
+				FlowHarvest:val.FlowHarvest,
+				LockReward :val.LockReward,
+				GrantProfit :val.GrantProfit,
+				FlowReport:val.FlowReport,
+				StoragePledge:val.StoragePledge,
+				StoragePledgeExit:val.StoragePledgeExit,
+				LeaseRequest:val.LeaseRequest,
+				ExchangeSRT:val.ExchangeSRT,
+				LeasePledge:val.LeasePledge,
+				LeaseRenewal:val.LeaseRenewal,
+				LeaseRenewalPledge:val.LeaseRenewalPledge,
+				LeaseRescind:val.LeaseRescind,
+				StorageRecoveryData:val.StorageRecoveryData,
+				StorageProofRecord :val.StorageProofRecord,
+				StorageExchangePrice:val.StorageExchangePrice,
+				ExtraStateRoot:val.ExtraStateRoot,
+				LockAccountsRoot:val.LockAccountsRoot,
+				StorageDataRoot:val.StorageDataRoot,
+				StorageExchangeBw:val.StorageExchangeBw,
+				SRTDataRoot: val.SRTDataRoot,
+			}
+			return rlp.EncodeToBytes(headerExtrav3)
 		} else{
 			headerExtra = val
 		}

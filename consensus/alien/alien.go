@@ -1494,7 +1494,13 @@ func paymentPledge(hasContract bool, pledge *PledgeItem, state *state.StateDB, h
 			payAddress = pledge.MultiSignature
 		}
 		if isGrantProfitOneTimeBlockNumber(header) {
-			addPayAddressBalance(payAddress, payAddressAll, amount)
+			payAmount:=new(big.Int).Set(amount)
+			burnAmount:=calBurnAmount(pledge,amount)
+			if burnAmount.Cmp(common.Big0)>0{
+				addPayAddressBalance(pledge.BurnAddress, payAddressAll, burnAmount)
+				payAmount=new(big.Int).Sub(payAmount,burnAmount)
+			}
+			addPayAddressBalance(payAddress, payAddressAll, payAmount)
 			return 0, amount
 		} else {
 			state.AddBalance(payAddress, amount)
@@ -1785,6 +1791,9 @@ func doVerifyHeaderExtra(header *types.Header, verifyExtra []byte, a *Alien) err
 }
 
 func addPayAddressBalance(addBalanceAddress common.Address, payAddressAll map[common.Address]*big.Int, amount *big.Int) {
+	if amount.Cmp(common.Big0)<=0{
+		return
+	}
 	if _, ok := payAddressAll[addBalanceAddress]; !ok {
 		payAddressAll[addBalanceAddress] = amount
 	} else {

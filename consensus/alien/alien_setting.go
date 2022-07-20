@@ -53,6 +53,7 @@ const (
 	storagePledgeTmpVerifyEffectNumberV2 = 1240413
 	PledgeRevertLockEffectNumber = 1495994
 	payPOSPGRedeemInterval = 1 * 60 * 60 + 40*60  //  pay bandwidth reward  interval every day
+	StoragePledgeOptEffectNumber = 1608207
 )
 
 var (
@@ -139,4 +140,10 @@ func  (a *Alien) notVerifyPkHeader(number uint64) bool{
 	r1:=	number >=storagePledgeTmpVerifyEffectNumber && number <=storagePledgeTmpVerifyEffectNumber+a.blockPerDay()*novalidPktime
 	r2:= number >=storagePledgeTmpVerifyEffectNumberV2 && number <=storagePledgeTmpVerifyEffectNumberV2+a.blockPerDay()*novalidVfPktime
 	return r1 || r2
+}
+func (a *Alien) isEffectPayPledge(number uint64) bool{
+	return number>= StoragePledgeOptEffectNumber && number <= StoragePledgeOptEffectNumber+BandwidthMakeupPunishDay*a.blockPerDay()
+}
+func (a *Alien) changeBandwidthEnable(number uint64) bool{
+	return number >= StorageChBwEffectNumber && number < StoragePledgeOptEffectNumber
 }

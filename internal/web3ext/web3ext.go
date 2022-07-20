@@ -208,6 +208,11 @@ web3._extend({
 			call: 'alien_getGrantProfitAtNumber',
 			params: 1
 		}),
+        new web3._extend.Method({
+			name: 'GetSTGBandwidthMakeup',
+			call: 'alien_getSTGBandwidthMakeup',
+			params: 0
+		}),
 	]
 });
 `

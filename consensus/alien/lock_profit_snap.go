@@ -298,6 +298,10 @@ func (s *LockData) updateGrantProfit(grantProfit []consensus.GrantProfitRecord, 
 				if _, ok = rlsLockBalance[item.MinerAddress].LockBalance[item.BlockNumber]; ok {
 					if pledge, ok := rlsLockBalance[item.MinerAddress].LockBalance[item.BlockNumber][item.Which]; ok {
 						pledge.Playment = new(big.Int).Add(pledge.Playment, item.Amount)
+						burnAmount:=calBurnAmount(pledge,item.Amount)
+						if burnAmount.Cmp(common.Big0)>0{
+							pledge.BurnAmount= new(big.Int).Add(pledge.BurnAmount,burnAmount)
+						}
 						hasChanged = true
 						if 0 <= pledge.Playment.Cmp(pledge.Amount) {
 							delete(rlsLockBalance[item.MinerAddress].LockBalance[item.BlockNumber], item.Which)
@@ -859,4 +863,118 @@ func (s *LockData) calPayProfit(db ethdb.Database,playGrantProfit []consensus.Gr
 	}
 	log.Info("calPayProfit ", "Locktype", s.Locktype, "elapsed", time.Since(timeNow), "number", header.Number.Uint64())
 	return playGrantProfit, nil
+}
+
+func (s *LockData) setBandwidthMakeupPunish(stgBandwidthMakeup map[common.Address]*BandwidthMakeup, storageData *StorageData, db ethdb.Database, hash common.Hash, number uint64) error{
+	rlsLockBalance := make(map[common.Address]*RlsLockData)
+
+	items := []*PledgeItem{}
+	for _, pledges := range s.FlowRevenue {
+		for _, pledge1 := range pledges.LockBalance {
+			for _, pledge := range pledge1 {
+				items = append(items, pledge)
+			}
+		}
+	}
+
+	s.appendRlsLockData(rlsLockBalance, items)
+
+	items, err := s.loadCacheL1(db)
+	if err != nil {
+		return err
+	}
+	s.appendRlsLockData(rlsLockBalance, items)
+	items, err = s.loadCacheL2(db)
+	if err != nil {
+		return err
+	}
+	s.appendRlsLockData(rlsLockBalance, items)
+
+	for minerAddress,itemRlsLock:=range rlsLockBalance{
+		lockBalance:=itemRlsLock.LockBalance
+		burnRatio:=common.Big0
+		if _, ok := storageData.StoragePledge[minerAddress]; ok {
+			if _, ok2 := stgBandwidthMakeup[minerAddress]; ok2 {
+				burnRatio=new(big.Int).Set(stgBandwidthMakeup[minerAddress].BurnRatio)
+			}
+		}else{
+			burnRatio=new(big.Int).Set(BurnBase)
+		}
+		for _,itemBlockLock:=range lockBalance{
+			for _,itemWhichLock:=range itemBlockLock{
+				s.setBurnRatio(itemWhichLock,burnRatio)
+			}
+		}
+	}
+	s.saveCacheL2(db, rlsLockBalance, hash,number)
+	return nil
+}
+
+func calBurnAmount(pledge *PledgeItem, amount *big.Int) *big.Int {
+	burnAmount:=common.Big0
+	if pledge.BurnRatio!=nil&&pledge.BurnRatio.Cmp(common.Big0)>0{
+		burnAmount=new(big.Int).Mul(amount,pledge.BurnRatio)
+		burnAmount=new(big.Int).Div(burnAmount, BurnBase)
+	}
+	return burnAmount
+}
+
+func (s *LockData) setStorageRemovePunish(pledge []common.Address, db ethdb.Database, hash common.Hash, number uint64) interface{} {
+	rlsLockBalance := make(map[common.Address]*RlsLockData)
+
+	items := []*PledgeItem{}
+	for _, pledges := range s.FlowRevenue {
+		for _, pledge1 := range pledges.LockBalance {
+			for _, pledge := range pledge1 {
+				items = append(items, pledge)
+			}
+		}
+	}
+
+	s.appendRlsLockData(rlsLockBalance, items)
+
+	items, err := s.loadCacheL1(db)
+	if err != nil {
+		return err
+	}
+	s.appendRlsLockData(rlsLockBalance, items)
+	items, err = s.loadCacheL2(db)
+	if err != nil {
+		return err
+	}
+	s.appendRlsLockData(rlsLockBalance, items)
+
+	pledgeAddrs := make(map[common.Address]uint64)
+	for _, sPAddrs := range pledge {
+		pledgeAddrs[sPAddrs] = 1
+	}
+	hasChanged := false
+	for minerAddress,itemRlsLock:=range rlsLockBalance{
+		lockBalance:=itemRlsLock.LockBalance
+		if _, ok := pledgeAddrs[minerAddress]; ok {
+			hasChanged=true
+			burnRatio:=new(big.Int).Set(BurnBase)
+			for _,itemBlockLock:=range lockBalance{
+				for _,itemWhichLock:=range itemBlockLock{
+					s.setBurnRatio(itemWhichLock,burnRatio)
+				}
+			}
+		}
+	}
+	if hasChanged{
+		s.saveCacheL2(db, rlsLockBalance, hash,number)
+	}
+	return nil
+}
+
+func(s *LockData) setBurnRatio(lock *PledgeItem,burnRatio *big.Int) {
+	if lock.BurnRatio==nil{
+		lock.BurnAddress=common.BigToAddress(big.NewInt(0))
+		lock.BurnRatio=burnRatio
+	}else if lock.BurnRatio.Cmp(burnRatio)<0{
+		lock.BurnRatio=burnRatio
+	}
+	if lock.BurnAmount==nil{
+		lock.BurnAmount=common.Big0
+	}
 }

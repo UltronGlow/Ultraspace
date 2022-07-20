@@ -38,6 +38,7 @@ const (
 	esrd_s    = "StorageRecoveryData"
 	espr_s    = "StorageProofRecord"
 	esep_s    = "StorageExchangePrice"
+	esbp_s    = "StorageBwPay"
 )
 
 func verifyHeaderExtern(currentExtra *HeaderExtra, verifyExtra *HeaderExtra) error {
@@ -219,6 +220,11 @@ func verifyHeaderExtern(currentExtra *HeaderExtra, verifyExtra *HeaderExtra) err
 	//SRTDataRoot
 	if currentExtra.SRTDataRoot != verifyExtra.SRTDataRoot {
 		return errors.New("Compare SRTDataRoot, current is " + currentExtra.SRTDataRoot.String() + ". but verify is " + verifyExtra.SRTDataRoot.String())
+	}
+	//esbp_s    = "StorageBwPay"
+	err = verifyStorageBwPay(currentExtra.StorageBwPay, verifyExtra.StorageBwPay)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -1345,6 +1351,44 @@ func compareStorageExchangePrice(a []StorageExchangePriceRecord, b []StorageExch
 		}
 		if !find {
 			return errorsMsg4(esep_s, c)
+		}
+	}
+	return nil
+}
+func verifyStorageBwPay(current []StorageBwPayRecord, verify []StorageBwPayRecord) error {
+
+	arrLen, err := verifyArrayBasic(esbp_s, current, verify)
+	if err != nil {
+		return err
+	}
+	if arrLen == 0 {
+		return nil
+	}
+	err = compareStorageBwPay(current, verify)
+	if err != nil {
+		return err
+	}
+	err = compareStorageBwPay(verify, current)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func compareStorageBwPay(a []StorageBwPayRecord, b []StorageBwPayRecord) error {
+	b2 := make([]StorageBwPayRecord, len(b))
+	copy(b2, b)
+	for _, c := range a {
+		find := false
+		for i, v := range b2 {
+			if c.Address == v.Address && c.Amount.Cmp(v.Amount) == 0 {
+				find = true
+				b2 = append(b2[:i], b2[i+1:]...)
+				break
+			}
+		}
+		if !find {
+			return errorsMsg4(esbp_s, c)
 		}
 	}
 	return nil

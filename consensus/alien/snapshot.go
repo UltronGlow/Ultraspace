@@ -127,6 +127,10 @@ type PledgeItem struct {
 	RevenueAddress  common.Address `json:"revenueaddress"`
 	RevenueContract common.Address `json:"contractaddress"`
 	MultiSignature  common.Address `json:"multisignatureaddress"`
+
+	BurnAddress  common.Address `json:"burnaddress"`
+	BurnRatio *big.Int `json:"burnratio"`
+	BurnAmount  *big.Int `json:"burnamount"`
 }
 
 type ClaimedBandwidth struct {
@@ -171,7 +175,6 @@ type LockBalanceData struct {
 	RewardBalance map[uint32]*big.Int               `json:"rewardbalance"`
 	LockBalance   map[uint64]map[uint32]*PledgeItem `json:"lockbalance"`
 }
-
 // Snapshot is the state of the authorization voting at a given point in time.
 type Snapshot struct {
 	config   *params.AlienConfig // Consensus engine parameters to fine tune behavior
@@ -229,6 +232,7 @@ type Snapshot struct {
 	RevenueStorage    map[common.Address]*RevenueParameter             `json:"storagerevenueaddress"`
 	SRT            SRTState                             `json:"srt"`
 	SRTHash        common.Hash                          `json:"srthash"`
+	STGBandwidthMakeup   map[common.Address]*BandwidthMakeup      `json:"stgbandwidthmakeup"`
 }
 
 var (
@@ -558,6 +562,16 @@ func (s *Snapshot) copy() *Snapshot {
 	if s.SRT != nil {
 		cpy.SRT = s.SRT.Copy()
 		cpy.SRTHash = cpy.SRT.Root()
+	}
+	if s.STGBandwidthMakeup!=nil{
+		cpy.STGBandwidthMakeup = make(map[common.Address]*BandwidthMakeup,0)
+		for paddr, bw := range s.STGBandwidthMakeup {
+			cpy.STGBandwidthMakeup[paddr] = &BandwidthMakeup{
+				OldBandwidth:new(big.Int).Set(bw.OldBandwidth),
+				BurnRatio:new(big.Int).Set(bw.BurnRatio),
+				DepositMakeup:new(big.Int).Set(bw.DepositMakeup),
+			}
+		}
 	}
 	copy(cpy.HistoryHash, s.HistoryHash)
 	copy(cpy.Signers, s.Signers)
@@ -953,6 +967,12 @@ func (s *Snapshot) apply(headers []*types.Header, db ethdb.Database) (*Snapshot,
 				return snap,nil
 			}
 			snap.FlowRevenue.PosPgExitLock=NewLockData(LOCKPOSEXITDATA)
+		}
+		if header.Number.Uint64() ==StoragePledgeOptEffectNumber{
+			snap.initBandwidthMakeup(header.Number)
+		}
+		if header.Number.Uint64() ==(StoragePledgeOptEffectNumber+BandwidthMakeupPunishDay*snap.getBlockPreDay()){
+			snap.setBandwidthMakeupPunish(header,db)
 		}
 	}
 	snap.Number += uint64(len(headers))
@@ -2313,3 +2333,4 @@ func (s *Snapshot) compareGrantProfitHash(GrantProfit []consensus.GrantProfitRec
 		}
 	}
 }
+

@@ -433,7 +433,7 @@ func makeStructDecoder(typ reflect.Type) (decoder, error) {
 					zeroFields(val, fields[i:])
 					break
 				}
-				if typ.Field(i).Name=="StoragePledge" || typ.Field(i).Name=="StoragePledgeExit" ||typ.Field(i).Name=="LeaseRequest" ||typ.Field(i).Name=="ExchangeSRT" ||typ.Field(i).Name=="LeasePledge" ||typ.Field(i).Name=="LeaseRenewal" ||typ.Field(i).Name=="LeaseRenewalPledge" ||typ.Field(i).Name=="LeaseRescind" ||typ.Field(i).Name=="StorageRecoveryData" ||typ.Field(i).Name=="StorageProofRecord" ||typ.Field(i).Name=="StorageExchangePrice" ||typ.Field(i).Name=="ExtraStateRoot" ||typ.Field(i).Name=="LockAccountsRoot" ||typ.Field(i).Name=="StorageDataRoot"||typ.Field(i).Name=="StorageExchangeBw" ||typ.Field(i).Name=="SRTDataRoot"{
+				if typ.Field(i).Name=="StoragePledge" || typ.Field(i).Name=="StoragePledgeExit" ||typ.Field(i).Name=="LeaseRequest" ||typ.Field(i).Name=="ExchangeSRT" ||typ.Field(i).Name=="LeasePledge" ||typ.Field(i).Name=="LeaseRenewal" ||typ.Field(i).Name=="LeaseRenewalPledge" ||typ.Field(i).Name=="LeaseRescind" ||typ.Field(i).Name=="StorageRecoveryData" ||typ.Field(i).Name=="StorageProofRecord" ||typ.Field(i).Name=="StorageExchangePrice" ||typ.Field(i).Name=="ExtraStateRoot" ||typ.Field(i).Name=="LockAccountsRoot" ||typ.Field(i).Name=="StorageDataRoot"||typ.Field(i).Name=="StorageExchangeBw" ||typ.Field(i).Name=="SRTDataRoot" || typ.Field(i).Name=="StorageBwPay" ||typ.Field(i).Name=="BurnAddress"||typ.Field(i).Name=="BurnRatio"||typ.Field(i).Name=="BurnAmount"{
 					zeroFields(val, fields[i:])
 				}else{
 					return &decodeError{msg: "too few elements", typ: typ}
