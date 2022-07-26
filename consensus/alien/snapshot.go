@@ -230,7 +230,7 @@ type Snapshot struct {
 	ExStateRoot     common.Hash                    `json:"extrasstateRoot"`
 	GrantListRoot   common.Hash                    `json:"grantListRoot"`
 	RevenueStorage    map[common.Address]*RevenueParameter             `json:"storagerevenueaddress"`
-	SRT            SRTState                             `json:"srt"`
+	SRT            SRTState                             `json:"-"`
 	SRTHash        common.Hash                          `json:"srthash"`
 	STGBandwidthMakeup   map[common.Address]*BandwidthMakeup      `json:"stgbandwidthmakeup"`
 }
@@ -2333,4 +2333,5 @@ func (s *Snapshot) compareGrantProfitHash(GrantProfit []consensus.GrantProfitRec
 		}
 	}
 }
+
 

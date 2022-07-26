@@ -54,6 +54,7 @@ const (
 	PledgeRevertLockEffectNumber = 1495994
 	payPOSPGRedeemInterval = 1 * 60 * 60 + 40*60  //  pay bandwidth reward  interval every day
 	StoragePledgeOptEffectNumber = 1608207
+	FixLeaseCapacityNumber= 1660014
 )
 
 var (
@@ -146,4 +147,8 @@ func (a *Alien) isEffectPayPledge(number uint64) bool{
 }
 func (a *Alien) changeBandwidthEnable(number uint64) bool{
 	return number >= StorageChBwEffectNumber && number < StoragePledgeOptEffectNumber
+}
+
+func isFixLeaseCapacity(number uint64) bool{
+	return number ==FixLeaseCapacityNumber
 }

@@ -76,7 +76,7 @@ var (
 	eb1b=new(big.Int).Mul(tb1b,big.NewInt(1048576))
 	pb1b= new(big.Int).Mul(big.NewInt(1024), tb1b)
 	BurnBase=big.NewInt(10000)
-	BandwidthMakeupPunishDay=uint64(7)
+	BandwidthMakeupPunishDay=uint64(30)
 	bigInt20=big.NewInt(20)
 )
 
@@ -3316,7 +3316,10 @@ func (s *Snapshot) updateLeaseRescind(rescinds []LeaseRescindRecord, number *big
 	s.StorageData.updateLeaseRescind(rescinds, number, db)
 }
 
-func (s *Snapshot) storageVerificationCheck(number uint64, blockPerday uint64, db ethdb.Database,currentLockReward [] LockRewardRecord) ([]LockRewardRecord,[]ExchangeSRTRecord, *big.Int,error, *big.Int) {
+func (s *Snapshot) storageVerificationCheck(number uint64, blockPerday uint64, db ethdb.Database, currentLockReward []LockRewardRecord, state *state.StateDB) ([]LockRewardRecord, []ExchangeSRTRecord, *big.Int, error, *big.Int) {
+	if isFixLeaseCapacity(number) {
+		return s.StorageData.fixLeaseCapacity(currentLockReward,state)
+	}
 	if isStorageVerificationCheck(number, s.Period) {
 		passTime := new(big.Int).Mul(s.SystemConfig.Deposit[sscEnumLeaseExpires], new(big.Int).SetUint64(blockPerday))
 		basePrice := s.SystemConfig.Deposit[sscEnumStoragePrice]
@@ -3336,6 +3339,13 @@ func (snap *Snapshot) updateHarvest(harvest *big.Int) {
 }
 
 func (s *Snapshot) calStorageVerificationCheck(roothash common.Hash, number uint64, blockPerday uint64, db ethdb.Database, header *types.Header) (*Snapshot, error) {
+	if isFixLeaseCapacity(number) {
+		s.StorageData.fixLeaseCapacity(nil,nil)
+		calRootHash:=s.StorageData.Hash
+		if calRootHash != roothash {
+			return s, errors.New("Storage root hash is not same,head:" + roothash.String() + "cal:" + calRootHash.String())
+		}
+	}
 	if isStorageVerificationCheck(number, s.Period) {
 		passTime := new(big.Int).Mul(s.SystemConfig.Deposit[sscEnumLeaseExpires], new(big.Int).SetUint64(blockPerday))
 		calRootHash := s.StorageData.calStorageVerificationCheck(number, blockPerday, passTime, s.RevenueStorage,s,db,header)
@@ -3848,4 +3858,39 @@ func (s *Snapshot) setStorageRemovePunish(pledge []common.Address, number uint64
 	if err != nil {
 		log.Warn("setStorageRemovePunish FlowLock Error", "err", err)
 	}
+}
+
+func (s *StorageData) fixLeaseCapacity(currentLockReward []LockRewardRecord, state *state.StateDB) ([]LockRewardRecord, []ExchangeSRTRecord, *big.Int, error, *big.Int) {
+	revertExchangeSRT := make([]ExchangeSRTRecord, 0)
+	for pledgeAddress, sPledge := range s.StoragePledge {
+		if sPledge.PledgeStatus.Cmp(big.NewInt(SPledgeRetrun)) == 0 {
+			continue
+		}
+		if sPledge.PledgeStatus.Cmp(big.NewInt(SPledgeRemoving)) == 0 || sPledge.PledgeStatus.Cmp(big.NewInt(SPledgeExit)) == 0 {
+			continue
+		}
+		leases := sPledge.Lease
+		for _, lease := range leases {
+			if lease.Status == LeaseReturn {
+				continue
+			}
+			if lease.Status == LeaseNormal || lease.Status == LeaseBreach{
+				leaseCapacity:=new(big.Int).Set(lease.Capacity)
+				lCapMod:=new(big.Int).Mod(leaseCapacity,big.NewInt(5))
+				if lCapMod.Cmp(common.Big0)!=0{
+                    if state!=nil{
+						state.AddBalance(lease.DepositAddress,lease.Deposit)
+					}
+					revertExchangeSRT = append(revertExchangeSRT, ExchangeSRTRecord{
+						Target: lease.Address,
+						Amount: lease.Cost,
+					})
+					lease.Status=LeaseReturn
+					s.accumulateLeaseHash(pledgeAddress, lease)
+				}
+			}
+		}
+	}
+	s.accumulateHeaderHash()
+	return currentLockReward, revertExchangeSRT, nil, nil, nil
 }
