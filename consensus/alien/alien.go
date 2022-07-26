@@ -387,6 +387,8 @@ func (a *Alien) snapshot(chain consensus.ChainHeaderReader, number uint64, hash 
 				log.Trace("Loaded voting snapshot from disk", "number", number, "hash", hash)
 				snap = s
 				break
+			}else{
+				log.Debug("Loaded voting snapshot from disk","number", number,"err",err)
 			}
 		}
 		// If we're at block zero, make a snapshot
@@ -1144,7 +1146,7 @@ func (a *Alien) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 			var revertSrt []ExchangeSRTRecord
 			snap1 := snap.copy()
 			leftAmount:=common.Big0
-			currentHeaderExtra.LockReward, revertSrt, harvest,err,leftAmount = snap1.storageVerificationCheck(header.Number.Uint64(), snap1.getBlockPreDay(), a.db, currentHeaderExtra.LockReward)
+			currentHeaderExtra.LockReward, revertSrt, harvest,err,leftAmount = snap1.storageVerificationCheck(header.Number.Uint64(), snap1.getBlockPreDay(), a.db, currentHeaderExtra.LockReward,state)
              if err!=nil {
              	return err
 			 }
